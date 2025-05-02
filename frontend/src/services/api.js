@@ -21,6 +21,22 @@ export const questionApi = {
 // API functions for crossword generation
 export const crosswordApi = {
   buildCrossword: (questions) => api.post('/build-crossword', { questions }),
+  
+  // New methods for interactive crossword features
+  saveProgress: (playlistId, answers) => api.post('/save-progress', { 
+    playlistId, 
+    answers 
+  }),
+  
+  loadProgress: (playlistId) => api.get(`/progress/${playlistId}`),
+  
+  shareProgress: (playlistId, crosswordData, answers) => api.post('/share', {
+    playlistId,
+    crosswordData,
+    answers
+  }),
+  
+  getSharedCrossword: (shareId) => api.get(`/shared/${shareId}`)
 };
 
 // Export the axios instance for custom requests

@@ -1,4 +1,4 @@
-const crosswordService = require('../services/crosswordService');
+const CrosswordService = require('../services/crosswordService');
 
 /**
  * Build a crossword grid from selected questions
@@ -17,16 +17,16 @@ const buildCrossword = (req, res) => {
       });
     }
     
+    // Create an instance of the CrosswordService
+    const crosswordService = new CrosswordService();
+    
     // Build crossword grid
     console.log(`Building crossword with ${questions.length} questions`);
     const crosswordData = crosswordService.buildCrossword(questions);
     console.log('Crossword built successfully');
     
-    // Return crossword data
-    return res.status(200).json({
-      success: true,
-      data: crosswordData
-    });
+    // Return crossword data directly instead of nesting it
+    return res.status(200).json(crosswordData);
   } catch (error) {
     console.error('Error in buildCrossword controller:', error);
     return res.status(500).json({ 
