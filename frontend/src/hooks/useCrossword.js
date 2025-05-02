@@ -31,6 +31,16 @@ const useCrossword = (initialCrossword = null) => {
           Array(entry.answer.length).fill('');
       });
       setUserAnswers(initialAnswers);
+      
+      // Select first entry by default
+      if (initialCrossword.entries.length > 0) {
+        const firstEntry = initialCrossword.entries[0];
+        setSelectedEntry(firstEntry);
+        setSelectedCell({
+          row: firstEntry.position.row,
+          col: firstEntry.position.col
+        });
+      }
     }
   }, [initialCrossword]);
   
@@ -40,30 +50,49 @@ const useCrossword = (initialCrossword = null) => {
     
     // Find the entry that contains this cell
     if (crossword) {
-      const entry = crossword.entries.find(e => {
-        // Check if the cell is part of this entry
-        if (e.direction === 'across') {
-          return e.position.row === row && 
-                 col >= e.position.col && 
-                 col < (e.position.col + e.answer.length);
-        } else {
-          return e.position.col === col && 
-                 row >= e.position.row && 
-                 row < (e.position.row + e.answer.length);
+      // Find all entries that include this cell
+      const entriesAtCell = crossword.entries.filter(entry => {
+        if (entry.direction === 'across') {
+          return entry.position.row === row && 
+                 col >= entry.position.col && 
+                 col < (entry.position.col + entry.answer.length);
+        } else { // down
+          return entry.position.col === col && 
+                 row >= entry.position.row && 
+                 row < (entry.position.row + entry.answer.length);
         }
       });
       
-      if (entry) {
-        setSelectedEntry(entry);
+      if (entriesAtCell.length > 0) {
+        // If we already have a selected entry at this position, toggle direction
+        if (selectedEntry && entriesAtCell.length > 1) {
+          // Find if the selected entry is at this position
+          const isSelectedEntryAtCell = entriesAtCell.some(
+            e => e.number === selectedEntry.number && e.direction === selectedEntry.direction
+          );
+          
+          if (isSelectedEntryAtCell) {
+            // Toggle to the other direction
+            const currentDirection = selectedEntry.direction;
+            const nextEntry = entriesAtCell.find(e => e.direction !== currentDirection);
+            if (nextEntry) {
+              setSelectedEntry(nextEntry);
+              return;
+            }
+          }
+        }
+        
+        // Default to the first entry that contains this cell
+        setSelectedEntry(entriesAtCell[0]);
       }
     }
-  }, [crossword]);
+  }, [crossword, selectedEntry]);
   
   // Update a user answer
   const updateAnswer = useCallback((entryId, index, value) => {
     setUserAnswers(prev => {
       const newAnswers = { ...prev };
-      const answerArray = [...newAnswers[entryId]];
+      const answerArray = [...(newAnswers[entryId] || [])];
       answerArray[index] = value.toUpperCase();
       newAnswers[entryId] = answerArray;
       return newAnswers;
@@ -123,6 +152,40 @@ const useCrossword = (initialCrossword = null) => {
     });
   }, [crossword, userAnswers]);
   
+  // Reset all user answers
+  const resetAnswers = useCallback(() => {
+    if (!crossword) return;
+    
+    const initialAnswers = {};
+    crossword.entries.forEach(entry => {
+      initialAnswers[entry.id || `${entry.position.row}-${entry.position.col}-${entry.direction}`] = 
+        Array(entry.answer.length).fill('');
+    });
+    setUserAnswers(initialAnswers);
+  }, [crossword]);
+  
+  // Fill in a specific answer (for "Show Answers" feature)
+  const fillAnswer = useCallback((entryId, answer) => {
+    setUserAnswers(prev => {
+      const newAnswers = { ...prev };
+      const answerArray = Array.from(answer.toUpperCase());
+      newAnswers[entryId] = answerArray;
+      return newAnswers;
+    });
+  }, []);
+  
+  // Fill in all answers
+  const fillAllAnswers = useCallback(() => {
+    if (!crossword) return;
+    
+    const completeAnswers = {};
+    crossword.entries.forEach(entry => {
+      const entryId = entry.id || `${entry.position.row}-${entry.position.col}-${entry.direction}`;
+      completeAnswers[entryId] = Array.from(entry.answer.toUpperCase());
+    });
+    setUserAnswers(completeAnswers);
+  }, [crossword]);
+  
   return {
     crossword,
     userAnswers,
@@ -132,7 +195,10 @@ const useCrossword = (initialCrossword = null) => {
     selectCell,
     updateAnswer,
     getCellValue,
-    getSubmissionAnswers
+    getSubmissionAnswers,
+    resetAnswers,
+    fillAnswer,
+    fillAllAnswers
   };
 };
 

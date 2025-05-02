@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
-import { Music, RefreshCw, Check } from 'lucide-react';
+import { Music, RefreshCw, Check, Play, Edit } from 'lucide-react';
 import { spotifyApi, questionApi, crosswordApi } from './services/api';
 import { CrosswordEditor, CrosswordEditorLoading } from './components/CrosswordEditor';
+import PlayQuiz from './components/PlayQuiz';
+import DebugCrosswordData from './components/DebugCrosswordData';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -46,6 +48,10 @@ function MusicCrossword() {
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [selectedQuestions, setSelectedQuestions] = useState([]);
   const [crosswordData, setCrosswordData] = useState(null);
+  const [playMode, setPlayMode] = useState(false);
+  
+  // Add debug mode state
+  const [debugMode, setDebugMode] = useState(false);
   
   // Mutation for fetching playlist data
   const playlistMutation = useMutation({
@@ -69,8 +75,14 @@ function MusicCrossword() {
   const crosswordMutation = useMutation({
     mutationFn: (questions) => crosswordApi.buildCrossword(questions),
     onSuccess: (response) => {
+      console.log('Crossword data received:', response.data.data);
       setCrosswordData(response.data.data);
       setStep(4);
+    },
+    onError: (error) => {
+      console.error('Error building crossword:', error);
+      // Keep the user on the questions page to select different questions
+      alert('Could not build a crossword with these questions. Try selecting different questions.');
     }
   });
   
@@ -99,38 +111,72 @@ function MusicCrossword() {
   
   const handleBuildCrossword = () => {
     if (selectedQuestions.length < 5) return;
+    setCrosswordData(null); // Reset previous data
     crosswordMutation.mutate(selectedQuestions);
   };
   
   const handleBackToQuestions = () => {
     setStep(3);
+    setPlayMode(false);
+  };
+
+  const toggleDebugMode = () => {
+    setDebugMode(!debugMode);
+  };
+  
+  const togglePlayMode = () => {
+    setPlayMode(!playMode);
+  };
+  
+  // Sanitize questions for compatible answers
+  const validateQuestion = (question) => {
+    if (!question.answer) return false;
+    const answer = question.answer.toUpperCase().replace(/[^A-Z]/g, '');
+    return answer.length >= 3 && /^[A-Z]+$/.test(answer);
   };
   
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
-      {/* Progress Steps */}
-      <div className="flex justify-between mb-8">
-        {[
-          { num: 1, text: 'Select Playlist' },
-          { num: 2, text: 'Generate Questions' },
-          { num: 3, text: 'Select Questions' },
-          { num: 4, text: 'Build Crossword' }
-        ].map(s => (
-          <div 
-            key={s.num} 
-            className={`flex flex-col items-center w-1/4 ${step >= s.num ? 'text-primary-600' : 'text-gray-400'}`}
-          >
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full mb-2 ${
-              step > s.num ? 'bg-primary-600 text-white' : 
-              step === s.num ? 'border-2 border-primary-600' : 
-              'border-2 border-gray-300'
-            }`}>
-              {step > s.num ? <Check size={20} /> : s.num}
-            </div>
-            <span className="text-sm text-center">{s.text}</span>
-          </div>
-        ))}
+      {/* Developer Tools (hide in production) */}
+      <div className="mb-4 text-right">
+        <button
+          onClick={toggleDebugMode}
+          className="text-xs px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+        >
+          {debugMode ? 'Hide Debug' : 'Show Debug'}
+        </button>
       </div>
+      
+      {/* Debug Data (Only shown in debug mode) */}
+      {debugMode && step === 4 && (
+        <DebugCrosswordData crosswordData={crosswordData} />
+      )}
+      
+      {/* Progress Steps (Only show if not in play mode) */}
+      {!playMode && (
+        <div className="flex justify-between mb-8">
+          {[
+            { num: 1, text: 'Select Playlist' },
+            { num: 2, text: 'Generate Questions' },
+            { num: 3, text: 'Select Questions' },
+            { num: 4, text: 'Build Crossword' }
+          ].map(s => (
+            <div 
+              key={s.num} 
+              className={`flex flex-col items-center w-1/4 ${step >= s.num ? 'text-primary-600' : 'text-gray-400'}`}
+            >
+              <div className={`flex items-center justify-center w-10 h-10 rounded-full mb-2 ${
+                step > s.num ? 'bg-primary-600 text-white' : 
+                step === s.num ? 'border-2 border-primary-600' : 
+                'border-2 border-gray-300'
+              }`}>
+                {step > s.num ? <Check size={20} /> : s.num}
+              </div>
+              <span className="text-sm text-center">{s.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
       
       {/* Step 1: Enter Spotify playlist */}
       {step === 1 && (
@@ -254,30 +300,55 @@ function MusicCrossword() {
             Select at least 5 questions to include in your crossword puzzle.
           </p>
           
+          {/* Info box about answer requirements */}
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
+            <h3 className="font-medium text-blue-800">Answer Requirements</h3>
+            <p className="text-sm text-blue-700">
+              For best results, select answers that:
+            </p>
+            <ul className="list-disc pl-5 text-sm text-blue-700 mt-1">
+              <li>Contain only letters (A-Z)</li>
+              <li>Are at least 3 characters long</li>
+              <li>Have no spaces or special characters</li>
+            </ul>
+          </div>
+          
           <div className="border rounded-md divide-y max-h-96 overflow-y-auto">
-            {generatedQuestions.map((question, index) => (
-              <div 
-                key={index}
-                className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer ${
-                  selectedQuestions.some(q => q.answer === question.answer) ? 'bg-primary-50' : ''
-                }`}
-                onClick={() => toggleQuestionSelection(question)}
-              >
-                <div>
-                  <p className="font-medium">{question.question}</p>
-                  <p className="text-sm text-gray-500">Answer: {question.answer}</p>
+            {generatedQuestions.map((question, index) => {
+              const isValid = validateQuestion(question);
+              
+              return (
+                <div 
+                  key={index}
+                  className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer ${
+                    !isValid ? 'opacity-50 bg-gray-50' : 
+                    selectedQuestions.some(q => q.answer === question.answer) ? 'bg-primary-50' : ''
+                  }`}
+                  onClick={() => isValid && toggleQuestionSelection(question)}
+                >
+                  <div>
+                    <p className="font-medium">{question.question}</p>
+                    <p className="text-sm text-gray-500">
+                      Answer: {question.answer}
+                      {!isValid && (
+                        <span className="text-red-500 ml-2">
+                          (Not usable in crossword)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className={`w-6 h-6 flex items-center justify-center rounded-full border ${
+                    selectedQuestions.some(q => q.answer === question.answer) 
+                      ? 'bg-primary-600 border-primary-600 text-white' 
+                      : 'border-gray-300'
+                  }`}>
+                    {selectedQuestions.some(q => q.answer === question.answer) && (
+                      <Check size={16} />
+                    )}
+                  </div>
                 </div>
-                <div className={`w-6 h-6 flex items-center justify-center rounded-full border ${
-                  selectedQuestions.some(q => q.answer === question.answer) 
-                    ? 'bg-primary-600 border-primary-600 text-white' 
-                    : 'border-gray-300'
-                }`}>
-                  {selectedQuestions.some(q => q.answer === question.answer) && (
-                    <Check size={16} />
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           
           <div className="mt-4 flex justify-between items-center">
@@ -315,15 +386,52 @@ function MusicCrossword() {
         </div>
       )}
       
-      {/* Step 4: Crossword Editor */}
+      {/* Step 4: Crossword Editor/Player */}
       {step === 4 && (
         crosswordMutation.isPending ? (
           <CrosswordEditorLoading onBack={handleBackToQuestions} />
         ) : crosswordData ? (
-          <CrosswordEditor 
-            crosswordData={crosswordData} 
-            onBack={handleBackToQuestions} 
-          />
+          <>
+            {/* Toggle between edit and play mode */}
+            <div className="flex justify-end mb-4">
+              <div className="inline-flex rounded-md shadow-sm" role="group">
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium ${!playMode 
+                    ? 'bg-primary-600 text-white' 
+                    : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                    rounded-l-lg border border-gray-200 flex items-center`}
+                  onClick={() => setPlayMode(false)}
+                >
+                  <Edit className="mr-2" size={16} />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium ${playMode 
+                    ? 'bg-primary-600 text-white' 
+                    : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                    rounded-r-lg border border-gray-200 flex items-center`}
+                  onClick={() => setPlayMode(true)}
+                >
+                  <Play className="mr-2" size={16} />
+                  Play
+                </button>
+              </div>
+            </div>
+            
+            {playMode ? (
+              <PlayQuiz 
+                crosswordData={crosswordData} 
+                onReset={() => setPlayMode(false)} 
+              />
+            ) : (
+              <CrosswordEditor 
+                crosswordData={crosswordData} 
+                onBack={handleBackToQuestions} 
+              />
+            )}
+          </>
         ) : (
           <div className="text-center py-12">
             <p className="text-red-500">

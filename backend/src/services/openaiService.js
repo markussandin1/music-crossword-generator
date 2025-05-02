@@ -32,11 +32,9 @@ const generateQuestions = async (trackData, options = {}) => {
 Follow these rules:
 1. Each answer must be a SINGLE WORD between ${minAnswerLength} and ${maxAnswerLength} characters
 2. Answers should be nouns, music terms, or artist names (no articles, pronouns)
-3. Focus on general knowledge about these songs, artists, genres, or music terminology
+3. Don't only focus on general knowledge about these songs, artists, genres, or music terminology. It should also be questions about things in the song, stuff related to the artist, i dont mind if it's a bit far fetched question. 
 4. Create questions of varying difficulty levels
-5. Avoid extremely obscure references
 6. Each answer should be unique and not repeated
-7. Only use information that can be reasonably inferred from the track data provided
 8. Ensure answers can be clearly inferred from the clues
 9. Answers must contain only letters A-Z (no numbers, spaces, or special characters)
 10. Make all answers UPPERCASE

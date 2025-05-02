@@ -10,9 +10,42 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 const CrosswordEditor = ({ crosswordData, onBack }) => {
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [error, setError] = useState(null);
+  
+  // Validate crossword data on mount
+  useEffect(() => {
+    if (!crosswordData) {
+      setError('No crossword data available');
+      return;
+    }
+    
+    // Check if crossword data has the required structure
+    if (!crosswordData.grid || !crosswordData.entries || 
+        !Array.isArray(crosswordData.grid.grid) || 
+        !Array.isArray(crosswordData.entries)) {
+      setError('Invalid crossword data format');
+      console.error('Invalid crossword data:', crosswordData);
+      return;
+    }
+    
+    // Reset error if data is valid
+    setError(null);
+    
+    // Select first entry by default
+    if (crosswordData.entries.length > 0 && !selectedEntry) {
+      const firstEntry = crosswordData.entries[0];
+      setSelectedEntry(firstEntry);
+      setSelectedCell({ 
+        row: firstEntry.position.row, 
+        col: firstEntry.position.col 
+      });
+    }
+  }, [crosswordData]);
   
   // Select a cell and determine the selected entry
   const selectCell = (row, col) => {
+    if (!crosswordData) return;
+    
     setSelectedCell({ row, col });
     
     // Find entries that include this cell
@@ -100,6 +133,37 @@ const CrosswordEditor = ({ crosswordData, onBack }) => {
       </div>
     );
   };
+  
+  // If there's an error, display it
+  if (error) {
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold">
+            Crossword Preview
+          </h2>
+          
+          <button 
+            onClick={onBack}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded flex items-center"
+          >
+            <ArrowLeft className="mr-2" size={18} />
+            Back to Questions
+          </button>
+        </div>
+        
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-600">{error}</p>
+          <p className="mt-2">Please try again with different questions or check the console for more details.</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // If no crossword data is available, show a loading state
+  if (!crosswordData || !crosswordData.grid || !crosswordData.entries) {
+    return <CrosswordEditorLoading onBack={onBack} />;
+  }
   
   return (
     <div>

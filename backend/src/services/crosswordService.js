@@ -1,174 +1,238 @@
 /**
- * Crossword Service for generating crossword puzzles
+ * Improved Crossword Service for generating crossword puzzles
  */
-class CrosswordService {
-  constructor() {
-    this.MAX_ATTEMPTS = 50;
-    this.MIN_WORD_LENGTH = 3;
-  }
-
-  /**
-   * Normalize an answer string
-   * @param {string} answer - The answer string to normalize
-   * @returns {string} Normalized answer (uppercase, letters only)
-   */
-  normalizeAnswer(answer) {
-    return answer.toUpperCase().replace(/[^A-Z]/g, '');
-  }
-
-  /**
-   * Build a crossword grid from a set of questions and answers
-   * @param {Array} questions - Array of question objects with answer property
-   * @returns {Object} Crossword grid and entry data
-   */
-  buildCrossword(questions) {
-    // Filter out answers that are too short or contain invalid characters
-    const validQuestions = questions.filter(q => {
-      const answer = this.normalizeAnswer(q.answer);
-      return answer.length >= this.MIN_WORD_LENGTH && /^[A-Z]+$/.test(answer);
-    });
-
-    if (validQuestions.length === 0) {
-      throw new Error('No valid questions provided.');
-    }
-
-    // Sort answers by length (descending) for better grid placement
-    const sortedQuestions = [...validQuestions].sort(
-      (a, b) => this.normalizeAnswer(b.answer).length - this.normalizeAnswer(a.answer).length
-    );
-
-    // Try different starting positions for the first word
-    for (let attempt = 0; attempt < this.MAX_ATTEMPTS; attempt++) {
-      try {
-        const result = this.generateGrid(sortedQuestions);
-        return this.formatCrosswordData(result);
-      } catch (error) {
-        console.log(`Attempt ${attempt + 1} failed: ${error.message}`);
-        // Continue to next attempt
-      }
-    }
-
-    throw new Error('Failed to generate a crossword after maximum attempts.');
-  }
-
-  /**
-   * Generate a crossword grid from questions
-   * @param {Array} questions - Array of question objects
-   * @returns {Object} Grid data
-   */
-  generateGrid(questions) {
-    // Initialize the grid with the first word
-    const grid = initializeGrid(questions[0]);
-    
-    // Place remaining words
-    const entries = [];
-    const firstEntry = {
-      answer: this.normalizeAnswer(questions[0].answer),
-      clue: questions[0].question,
-      position: { row: Math.floor(grid.length / 2), col: Math.floor((grid[0].length - questions[0].answer.length) / 2) },
-      direction: 'across',
-    };
-    
-    entries.push(firstEntry);
-    
-    // Track used words to avoid duplicates
-    const usedWords = new Set([this.normalizeAnswer(questions[0].answer)]);
-    
-    // Try to place remaining words
-    for (let i = 1; i < questions.length; i++) {
-      const wordData = questions[i];
-      const normalizedAnswer = this.normalizeAnswer(wordData.answer);
-      
-      if (usedWords.has(normalizedAnswer)) continue; // Skip duplicates
-      
-      const placement = findBestPlacement(grid, normalizedAnswer);
-      if (placement) {
-        placeWordInGrid(grid, normalizedAnswer, placement);
-        entries.push({
-          answer: normalizedAnswer,
-          clue: wordData.question,
-          position: { row: placement.row, col: placement.col },
-          direction: placement.direction,
-        });
-        usedWords.add(normalizedAnswer);
-      }
-    }
-    
-    // Trim the grid to remove empty rows and columns
-    const trimmedGridData = trimGrid(grid);
-    
-    // Adjust entry positions based on trimmed grid
-    const trimmedEntries = adjustEntryPositions(entries, grid, trimmedGridData);
-    
-    // Number entries correctly
-    numberEntries(trimmedEntries);
-    
-    return {
-      grid: trimmedGridData.grid,
-      entries: trimmedEntries
-    };
-  }
-
-  /**
-   * Format crossword data for frontend consumption
-   * @param {Object} gridData - Grid data with grid and entries
-   * @returns {Object} Formatted crossword data
-   */
-  formatCrosswordData(gridData) {
-    const { grid, entries } = gridData;
-    
-    // Convert empty strings to '-' and filled cells to their letter
-    const formattedGrid = grid.map(row => 
-      row.map(cell => cell === '' ? '-' : cell)
-    );
-    
-    // Format entries as placements
-    const placements = entries.map(entry => ({
-      clue: entry.clue,
-      answer: entry.answer,
-      startx: entry.position.col,
-      starty: entry.position.row,
-      orientation: entry.direction,
-      position: entry.number
-    }));
-    
-    return {
-      table: formattedGrid,
-      result: placements
-    };
-  }
-}
-
-// Keep the existing helper functions outside the class
 
 /**
- * Initialize a grid with the first word placed horizontally
- * @param {Object} wordData - Word data object with word and question
- * @returns {Array} 2D grid with the word placed
+ * Build a crossword grid from a set of questions and answers
+ * @param {Array} questions - Array of question objects with answer property
+ * @returns {Object} Crossword grid and entry data
  */
-const initializeGrid = (wordData) => {
-  const word = wordData.answer.toUpperCase();
-  // Create a grid with some padding around the word
-  const rows = 50;
-  const cols = 50;
-  const grid = Array(rows).fill().map(() => Array(cols).fill(''));
-  
-  // Place the first word horizontally in the middle of the grid
-  const middleRow = Math.floor(rows / 2);
-  const startCol = Math.floor((cols - word.length) / 2);
-  
-  for (let i = 0; i < word.length; i++) {
-    grid[middleRow][startCol + i] = word[i];
+const buildCrossword = (questions) => {
+  // Validate input
+  if (!questions || !Array.isArray(questions) || questions.length < 3) {
+    throw new Error('At least 3 questions are required to build a crossword');
   }
-  
-  return grid;
+
+  // Extract answers from questions and ensure they are uppercase
+  let words = questions.map(q => ({
+    word: q.answer.toUpperCase().replace(/[^A-Z]/g, ''), // Remove non-letter characters
+    question: q.question,
+    originalAnswer: q.answer // Keep the original answer for reference
+  }));
+
+  console.log('Processing words:', words);
+
+  // Filter out words that don't match our criteria
+  words = words.filter(wordData => {
+    // Ensure the word has only letters A-Z
+    if (!/^[A-Z]+$/.test(wordData.word)) {
+      console.warn(`Skipping word "${wordData.word}" because it contains non-letter characters`);
+      return false;
+    }
+    
+    // Ensure the word has at least 3 characters
+    if (wordData.word.length < 3) {
+      console.warn(`Skipping word "${wordData.word}" because it is too short`);
+      return false;
+    }
+    
+    return true;
+  });
+
+  // If we don't have enough valid words, throw an error
+  if (words.length < 3) {
+    throw new Error('Not enough valid words to build a crossword. Words must contain only letters and be at least 3 characters long.');
+  }
+
+  console.log(`Building crossword with ${words.length} valid words`);
+
+  // Sort words by length (longest first) for better grid construction
+  words.sort((a, b) => b.word.length - a.word.length);
+
+  // Multiple attempts to create a better crossword
+  const attempts = 3;
+  let bestCrossword = null;
+  let bestScore = -1;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      console.log(`Attempt ${attempt + 1} to build crossword`);
+      
+      // Try with different arrangements of words
+      const startingPositions = [
+        { row: 10, col: 10 },  // Center
+        { row: 5, col: 5 },    // Top-left
+        { row: 5, col: 15 }    // Top-right
+      ];
+      
+      const position = startingPositions[attempt % startingPositions.length];
+      
+      // Initialize grid with the first word
+      const grid = initializeEmptyGrid(30, 30); // Larger grid to allow more words
+      const entries = [];
+      
+      // Place first word horizontally
+      const firstWordData = words[0];
+      const firstEntry = {
+        answer: firstWordData.word,
+        clue: firstWordData.question,
+        position: { row: position.row, col: position.col },
+        direction: attempt % 2 === 0 ? 'across' : 'down',  // Alternate directions
+        number: 1
+      };
+      
+      placeWordInGrid(grid, firstWordData.word, {
+        row: position.row,
+        col: position.col,
+        direction: firstEntry.direction
+      });
+      
+      entries.push(firstEntry);
+      
+      // Track used words to avoid duplicates
+      const usedWords = new Set([firstWordData.word]);
+      
+      // Try to place remaining words
+      let entryNumber = 2;
+      let placedWords = 1;
+      
+      // Shuffle remaining words slightly to get different arrangements
+      const remainingWords = words.slice(1);
+      if (attempt > 0) {
+        // Simple Fisher-Yates shuffle
+        for (let i = remainingWords.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [remainingWords[i], remainingWords[j]] = [remainingWords[j], remainingWords[i]];
+        }
+      }
+      
+      // Try multiple times to place words
+      for (let i = 0; i < remainingWords.length; i++) {
+        const wordData = remainingWords[i];
+        if (usedWords.has(wordData.word)) continue; // Skip duplicates
+        
+        const placement = findBestPlacement(grid, wordData.word);
+        if (placement) {
+          placeWordInGrid(grid, wordData.word, placement);
+          entries.push({
+            answer: wordData.word,
+            clue: wordData.question,
+            position: { row: placement.row, col: placement.col },
+            direction: placement.direction,
+            number: entryNumber++
+          });
+          usedWords.add(wordData.word);
+          placedWords++;
+          console.log(`Placed word: ${wordData.word} (${placedWords} of ${words.length})`);
+        } else {
+          console.log(`Could not place word: ${wordData.word}`);
+        }
+      }
+      
+      // Require at least 3 words to be placed for a valid crossword
+      if (placedWords < 3) {
+        console.log(`Only placed ${placedWords} words, need at least 3`);
+        continue;
+      }
+      
+      // Score this crossword
+      const score = scoreGrid(grid, placedWords, words.length);
+      console.log(`Attempt ${attempt + 1} score: ${score} (placed ${placedWords}/${words.length} words)`);
+      
+      if (score > bestScore) {
+        console.log(`New best score: ${score}`);
+        
+        // Trim the grid to remove empty rows and columns
+        const trimmedGrid = trimGrid(grid);
+        
+        // Adjust entry positions based on trimmed grid
+        const trimmedEntries = adjustEntryPositions(entries, grid, trimmedGrid);
+        
+        // Number entries correctly
+        numberEntries(trimmedEntries);
+        
+        bestCrossword = {
+          grid: trimmedGrid,
+          entries: trimmedEntries
+        };
+        bestScore = score;
+      }
+      
+      // If we've placed all words, no need to try more iterations
+      if (placedWords === words.length) {
+        console.log('Placed all words, breaking early');
+        break;
+      }
+    } catch (error) {
+      console.error(`Attempt ${attempt + 1} failed:`, error);
+    }
+  }
+
+  if (bestCrossword && bestCrossword.entries.length >= 3) {
+    console.log(`Successfully built crossword with ${bestCrossword.entries.length} entries`);
+    return bestCrossword;
+  }
+
+  throw new Error('Failed to create a valid crossword with the provided words. Try different questions.');
 };
 
-// [Keep all the other helper functions unchanged from your original file]
-// canPlaceWordHorizontally, canPlaceWordVertically, placeWordInGrid, trimGrid, 
-// adjustEntryPositions, numberEntries, findBestPlacement
+/**
+ * Score a grid based on various factors
+ * @param {Array} grid - 2D grid array
+ * @param {number} placedWords - Number of words placed in the grid
+ * @param {number} totalWords - Total number of words attempted
+ * @returns {number} Score
+ */
+const scoreGrid = (grid, placedWords, totalWords) => {
+  // Basic score is the percentage of words placed
+  const placementScore = (placedWords / totalWords) * 100;
+  
+  // Count filled cells and grid dimensions
+  let filledCells = 0;
+  let totalCells = 0;
+  let minRow = grid.length;
+  let maxRow = 0;
+  let minCol = grid[0].length;
+  let maxCol = 0;
+  
+  for (let row = 0; row < grid.length; row++) {
+    for (let col = 0; col < grid[0].length; col++) {
+      if (grid[row][col] !== '') {
+        filledCells++;
+        minRow = Math.min(minRow, row);
+        maxRow = Math.max(maxRow, row);
+        minCol = Math.min(minCol, col);
+        maxCol = Math.max(maxCol, col);
+      }
+    }
+  }
+  
+  // Calculate used grid area
+  const usedArea = (maxRow - minRow + 1) * (maxCol - minCol + 1);
+  
+  // Density score is the percentage of filled cells in the used area
+  const densityScore = (filledCells / usedArea) * 20;  // Weight less than word placement
+  
+  // Shape score favors more square-like grids
+  const aspectRatio = Math.max(
+    (maxRow - minRow + 1) / (maxCol - minCol + 1),
+    (maxCol - minCol + 1) / (maxRow - minRow + 1)
+  );
+  const shapeScore = (1 / aspectRatio) * 10;  // Better when closer to 1
+  
+  // Combine scores
+  return placementScore + densityScore + shapeScore;
+};
 
-module.exports = CrosswordService;
+/**
+ * Initialize an empty grid of specified dimensions
+ * @param {number} rows - Number of rows
+ * @param {number} cols - Number of columns
+ * @returns {Array} 2D grid array
+ */
+const initializeEmptyGrid = (rows, cols) => {
+  return Array(rows).fill().map(() => Array(cols).fill(''));
+};
 
 /**
  * Find the best placement for a word in the grid
@@ -232,7 +296,7 @@ const canPlaceWordHorizontally = (grid, word, row, col) => {
   }
   
   let intersections = 0;
-  let validPlacement = false;
+  let intersectionFound = false;
   
   // Check each letter of the word
   for (let i = 0; i < word.length; i++) {
@@ -254,7 +318,7 @@ const canPlaceWordHorizontally = (grid, word, row, col) => {
         (row < rows - 1 && grid[row + 1][currentCol] !== '');
       
       if (hasVerticalWord) {
-        validPlacement = true;
+        intersectionFound = true;
       }
     } else {
       // Check if there are adjacent letters above or below
@@ -269,10 +333,10 @@ const canPlaceWordHorizontally = (grid, word, row, col) => {
   
   // Valid placement if word has at least one intersection or it's the first word
   if (intersections > 0) {
-    validPlacement = true;
+    intersectionFound = true;
   }
   
-  return { canPlace: validPlacement, intersections };
+  return { canPlace: intersectionFound, intersections };
 };
 
 /**
@@ -303,7 +367,7 @@ const canPlaceWordVertically = (grid, word, row, col) => {
   }
   
   let intersections = 0;
-  let validPlacement = false;
+  let intersectionFound = false;
   
   // Check each letter of the word
   for (let i = 0; i < word.length; i++) {
@@ -325,7 +389,7 @@ const canPlaceWordVertically = (grid, word, row, col) => {
         (col < cols - 1 && grid[currentRow][col + 1] !== '');
       
       if (hasHorizontalWord) {
-        validPlacement = true;
+        intersectionFound = true;
       }
     } else {
       // Check if there are adjacent letters to the left or right
@@ -340,10 +404,10 @@ const canPlaceWordVertically = (grid, word, row, col) => {
   
   // Valid placement if word has at least one intersection or it's the first word
   if (intersections > 0) {
-    validPlacement = true;
+    intersectionFound = true;
   }
   
-  return { canPlace: validPlacement, intersections };
+  return { canPlace: intersectionFound, intersections };
 };
 
 /**
@@ -369,7 +433,7 @@ const placeWordInGrid = (grid, word, placement) => {
 /**
  * Trim the grid to remove empty rows and columns
  * @param {Array} grid - 2D grid array
- * @returns {Array} Trimmed grid
+ * @returns {Object} Trimmed grid with bounds information
  */
 const trimGrid = (grid) => {
   const rows = grid.length;
@@ -472,4 +536,6 @@ const numberEntries = (entries) => {
   });
 };
 
-module.exports = CrosswordService;
+module.exports = {
+  buildCrossword
+};
