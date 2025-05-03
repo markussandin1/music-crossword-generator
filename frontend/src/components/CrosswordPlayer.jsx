@@ -1,238 +1,611 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { CrosswordGrid } from './CrosswordGrid';
-import { 
-  saveToLocalStorage, 
-  getFromLocalStorage, 
-  generateShareableLink, 
-  saveSharedCrossword,
-  getCompletionPercentage
-} from '../utils/storage';
-import { spotifyApi, questionApi, crosswordApi } from '../services/api';
+import React, { useState, useRef, useEffect } from 'react';
+import { Check, RotateCcw, X } from 'lucide-react';
 
-const CrosswordPlayer = () => {
-  const { playlistId } = useParams();
-  const [crosswordData, setCrosswordData] = useState(null);
-  const [playlistInfo, setPlaylistInfo] = useState(null);
-  const [savedAnswers, setSavedAnswers] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Fetch the playlist and create the crossword
+const CrosswordPlayer = ({ crosswordData, onBack }) => {
+  // Initialize state only when we have valid crossword data
+  const [userAnswers, setUserAnswers] = useState({});
+  const [selectedCell, setSelectedCell] = useState(null);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [currentDirection, setCurrentDirection] = useState('across');
+  const [isComplete, setIsComplete] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(null);
+  const inputRefs = useRef({});
+  
+  // Initialize the crossword and user answers when data is available
   useEffect(() => {
-    const loadCrossword = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Check for saved progress
-        const savedProgress = getFromLocalStorage(`crossword-${playlistId}`);
-        if (savedProgress) {
-          setSavedAnswers(savedProgress);
-        }
-        
-        // Get saved crossword data if it exists
-        const savedCrosswordData = getFromLocalStorage(`crossword-data-${playlistId}`);
-        if (savedCrosswordData) {
-          setCrosswordData(savedCrosswordData);
-          
-          // Also load playlist info if available
-          const savedPlaylistInfo = getFromLocalStorage(`playlist-info-${playlistId}`);
-          if (savedPlaylistInfo) {
-            setPlaylistInfo(savedPlaylistInfo);
+    if (crosswordData && crosswordData.grid && crosswordData.entries) {
+      // Initialize empty user answers using grid structure
+      const initialAnswers = {};
+      
+      // Iterate through the grid and create entries for valid cells
+      for (let row = 0; row < crosswordData.grid.grid.length; row++) {
+        for (let col = 0; col < crosswordData.grid.grid[row].length; col++) {
+          if (crosswordData.grid.grid[row][col] !== '') {
+            const key = `${row},${col}`;
+            initialAnswers[key] = '';
           }
-          
-          setIsLoading(false);
-          return;
         }
-        
-        // Fetch playlist data from Spotify
-        const playlistResponse = await spotifyApi.getPlaylistData(playlistId);
-        const playlist = playlistResponse.data;
-        
-        const playlistInfoData = {
-          name: playlist.name,
-          description: playlist.description || '',
-          owner: playlist.owner?.display_name || 'Unknown',
-          imageUrl: playlist.images?.[0]?.url || '',
-        };
-        
-        setPlaylistInfo(playlistInfoData);
-        
-        // Extract track data for question generation
-        const trackData = playlist.tracks.items.map(item => ({
-          name: item.track.name,
-          artist: item.track.artists[0].name,
-          album: item.track.album.name,
-        }));
-        
-        // Generate questions
-        const questionResponse = await questionApi.generateQuestions(trackData, {
-          count: 15, // Number of questions to generate
-          difficulty: 'medium',
-        });
-        
-        // Build crossword
-        const crosswordResponse = await crosswordApi.buildCrossword(questionResponse.data);
-        const crosswordDataResult = crosswordResponse.data;
-        
-        setCrosswordData(crosswordDataResult);
-        
-        // Save the crossword data to localStorage to avoid regenerating it
-        saveToLocalStorage(`crossword-data-${playlistId}`, crosswordDataResult);
-        saveToLocalStorage(`playlist-info-${playlistId}`, playlistInfoData);
-        
-      } catch (err) {
-        console.error('Error loading crossword:', err);
-        setError(err.message || 'Failed to load crossword');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    if (playlistId) {
-      loadCrossword();
-    }
-  }, [playlistId]);
-
-  // Handle completing the crossword
-  const handleComplete = () => {
-    // Show a success message
-    alert('Congratulations! You completed the crossword!');
-    
-    // Mark as completed in localStorage
-    const completedAnswers = {...savedAnswers, completed: true};
-    saveToLocalStorage(`crossword-${playlistId}`, completedAnswers);
-    setSavedAnswers(completedAnswers);
-  };
-  
-  // Save progress to localStorage
-  const handleSave = (answers) => {
-    if (saveToLocalStorage(`crossword-${playlistId}`, answers)) {
-      // Also save playlist info for future reference
-      if (playlistInfo) {
-        saveToLocalStorage(`playlist-info-${playlistId}`, playlistInfo);
       }
       
-      // Update the local state
-      setSavedAnswers(answers);
+      setUserAnswers(initialAnswers);
       
-      alert('Progress saved successfully!');
-    } else {
-      alert('Error saving progress');
+      // Select first entry by default
+      if (crosswordData.entries.length > 0) {
+        const firstEntry = crosswordData.entries[0];
+        setSelectedEntry(firstEntry);
+        setSelectedCell({
+          row: firstEntry.position.row,
+          col: firstEntry.position.col
+        });
+        setCurrentDirection(firstEntry.direction);
+      }
     }
+  }, [crosswordData]);
+  
+  // Get cell key helper function
+  const getCellKey = (row, col) => {
+    return `${row},${col}`;
   };
   
-  // Generate and share a link
-  const handleShare = () => {
-    if (crosswordData) {
-      // Save the current state for sharing
-      const shareId = saveSharedCrossword(playlistId, crosswordData, savedAnswers);
-      
-      // Generate a link with the share ID
-      const shareableLink = generateShareableLink(playlistId, { share: shareId });
-      
-      // Copy to clipboard
-      navigator.clipboard.writeText(shareableLink)
-        .then(() => {
-          alert('Link copied to clipboard!');
-        })
-        .catch(() => {
-          alert(`Share this link: ${shareableLink}`);
-        });
+  // Focus on the selected cell
+  useEffect(() => {
+    if (selectedCell && selectedEntry) {
+      const key = getCellKey(selectedCell.row, selectedCell.col);
+      const inputElement = inputRefs.current[key];
+      if (inputElement) {
+        inputElement.focus();
+      }
     }
-  };
-
-  // Calculate completion percentage for display
-  const getCompletion = () => {
-    if (!crosswordData || !savedAnswers) return null;
+  }, [selectedCell, selectedEntry]);
+  
+  // Check for puzzle completion
+  useEffect(() => {
+    if (!crosswordData) return;
     
-    // Count total non-empty cells in the crossword
-    let totalCells = 0;
-    crosswordData.table.forEach(row => {
-      row.forEach(cell => {
-        if (cell !== '-') totalCells++;
-      });
+    // Check if all cells have values
+    let allFilled = true;
+    for (let row = 0; row < crosswordData.grid.grid.length; row++) {
+      for (let col = 0; col < crosswordData.grid.grid[row].length; col++) {
+        if (crosswordData.grid.grid[row][col] !== '') {
+          const key = getCellKey(row, col);
+          if (!userAnswers[key]) {
+            allFilled = false;
+            break;
+          }
+        }
+      }
+      if (!allFilled) break;
+    }
+    
+    setIsComplete(allFilled);
+  }, [userAnswers, crosswordData]);
+  
+  // Get entries at a cell position
+  const getEntriesAtCell = (row, col) => {
+    if (!crosswordData?.entries) return [];
+    
+    return crosswordData.entries.filter(entry => {
+      if (entry.direction === 'across') {
+        return entry.position.row === row && 
+               col >= entry.position.col && 
+               col < entry.position.col + entry.answer.length;
+      } else { // down
+        return entry.position.col === col && 
+               row >= entry.position.row && 
+               row < entry.position.row + entry.answer.length;
+      }
     });
-    
-    return getCompletionPercentage(savedAnswers, totalCells);
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <div className="text-red-600 mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">Error Loading Crossword</h2>
-        <p className="text-gray-600 text-center mb-4">{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+  
+  // Find an entry at a cell with specific direction
+  const findEntryInDirection = (row, col, direction) => {
+    const entries = getEntriesAtCell(row, col);
+    return entries.find(entry => entry.direction === direction);
+  };
+  
+  // Select a cell and determine the appropriate entry
+  const selectCell = (row, col) => {
+    if (!crosswordData?.grid?.grid) return;
+    
+    // Check if cell is valid
+    if (crosswordData.grid.grid[row][col] === '') return;
+    
+    // Set the selected cell
+    setSelectedCell({ row, col });
+    
+    // Find entries at this cell
+    const entriesAtCell = getEntriesAtCell(row, col);
+    if (entriesAtCell.length === 0) return;
+    
+    // If clicking on the same cell, toggle direction
+    if (selectedCell && selectedCell.row === row && selectedCell.col === col) {
+      toggleDirection();
+      return;
+    }
+    
+    // First, try to find an entry in the current direction
+    let newEntry = entriesAtCell.find(entry => entry.direction === currentDirection);
+    
+    // If no entry in current direction, use the first entry
+    if (!newEntry) {
+      newEntry = entriesAtCell[0];
+      setCurrentDirection(newEntry.direction);
+    }
+    
+    setSelectedEntry(newEntry);
+  };
+  
+  // Handle cell input change
+  const handleInputChange = (row, col, value) => {
+    // Only accept letters
+    if (value && !/^[a-zA-Z]$/i.test(value)) {
+      return;
+    }
+    
+    // Update the answer
+    const key = getCellKey(row, col);
+    const newAnswers = {...userAnswers};
+    newAnswers[key] = value.toUpperCase();
+    setUserAnswers(newAnswers);
+    
+    // Move to next cell if a letter was entered
+    if (value && selectedEntry) {
+      moveToNextCell(row, col);
+    }
+  };
+  
+  // Move to next cell
+  const moveToNextCell = (row, col) => {
+    if (!selectedEntry) return;
+    
+    let nextRow = row;
+    let nextCol = col;
+    
+    if (selectedEntry.direction === 'across') {
+      nextCol += 1;
+    } else {
+      nextRow += 1;
+    }
+    
+    // Check if next cell is within the entry
+    const withinEntry = 
+      (selectedEntry.direction === 'across' && 
+       nextCol < selectedEntry.position.col + selectedEntry.answer.length) ||
+      (selectedEntry.direction === 'down' && 
+       nextRow < selectedEntry.position.row + selectedEntry.answer.length);
+    
+    if (withinEntry) {
+      moveToCell(nextRow, nextCol, selectedEntry.direction);
+    }
+  };
+  
+  // Move to a cell
+  const moveToCell = (row, col, direction) => {
+    if (!crosswordData?.grid?.grid) return;
+    
+    // Check if cell is valid
+    if (row < 0 || row >= crosswordData.grid.grid.length || 
+        col < 0 || col >= crosswordData.grid.grid[0].length ||
+        crosswordData.grid.grid[row][col] === '') {
+      return;
+    }
+    
+    // Set the direction explicitly
+    setCurrentDirection(direction);
+    
+    // Set the cell and entry
+    setSelectedCell({ row, col });
+    const entries = getEntriesAtCell(row, col);
+    const entry = entries.find(e => e.direction === direction) || entries[0];
+    if (entry) {
+      setSelectedEntry(entry);
+    }
+  };
+  
+  // Toggle direction at the current cell
+  const toggleDirection = () => {
+    if (!selectedCell) return;
+    
+    const { row, col } = selectedCell;
+    const newDirection = currentDirection === 'across' ? 'down' : 'across';
+    const entry = findEntryInDirection(row, col, newDirection);
+    
+    if (entry) {
+      setCurrentDirection(newDirection);
+      setSelectedEntry(entry);
+    }
+  };
+  
+  // Handle key presses
+  const handleKeyDown = (e) => {
+    if (!selectedCell || !selectedEntry) return;
+    
+    const { row, col } = selectedCell;
+    
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        moveToCell(row - 1, col, 'down');
+        break;
+        
+      case 'ArrowDown':
+        e.preventDefault();
+        moveToCell(row + 1, col, 'down');
+        break;
+        
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveToCell(row, col - 1, 'across');
+        break;
+        
+      case 'ArrowRight':
+        e.preventDefault();
+        moveToCell(row, col + 1, 'across');
+        break;
+        
+      case 'Backspace':
+        e.preventDefault();
+        handleBackspace();
+        break;
+        
+      case 'Tab':
+        e.preventDefault();
+        toggleDirection();
+        break;
+        
+      case ' ': // Space
+        e.preventDefault();
+        toggleDirection();
+        break;
+    }
+  };
+  
+  // Handle backspace key
+  const handleBackspace = () => {
+    if (!selectedCell || !selectedEntry) return;
+    
+    const { row, col } = selectedCell;
+    const key = getCellKey(row, col);
+    
+    // Get current value
+    const currentValue = userAnswers[key] || '';
+    
+    if (currentValue) {
+      // Clear the current cell
+      const newAnswers = {...userAnswers};
+      newAnswers[key] = '';
+      setUserAnswers(newAnswers);
+    } else {
+      // Move to previous cell if current is empty
+      if (selectedEntry.direction === 'across' && col > selectedEntry.position.col) {
+        moveToCell(row, col - 1, 'across');
+      } else if (selectedEntry.direction === 'down' && row > selectedEntry.position.row) {
+        moveToCell(row - 1, col, 'down');
+      }
+    }
+  };
+  
+  // Get the value of a cell
+  const getCellValue = (row, col) => {
+    const key = getCellKey(row, col);
+    return userAnswers[key] || '';
+  };
+  
+  // Check if all answers are correct
+  const checkAnswers = () => {
+    if (!crosswordData?.entries || !isComplete) return false;
+    
+    for (const entry of crosswordData.entries) {
+      let userAnswer = '';
+      
+      if (entry.direction === 'across') {
+        for (let col = entry.position.col; col < entry.position.col + entry.answer.length; col++) {
+          const key = getCellKey(entry.position.row, col);
+          userAnswer += userAnswers[key] || '';
+        }
+      } else {
+        for (let row = entry.position.row; row < entry.position.row + entry.answer.length; row++) {
+          const key = getCellKey(row, entry.position.col);
+          userAnswer += userAnswers[key] || '';
+        }
+      }
+      
+      if (userAnswer.toUpperCase() !== entry.answer.toUpperCase()) {
+        return false;
+      }
+    }
+    
+    return true;
+  };
+  
+  // Reset the crossword
+  const handleReset = () => {
+    if (!crosswordData?.grid?.grid) return;
+    
+    // Reset user answers
+    const emptyAnswers = {};
+    for (let row = 0; row < crosswordData.grid.grid.length; row++) {
+      for (let col = 0; col < crosswordData.grid.grid[row].length; col++) {
+        if (crosswordData.grid.grid[row][col] !== '') {
+          emptyAnswers[getCellKey(row, col)] = '';
+        }
+      }
+    }
+    
+    setUserAnswers(emptyAnswers);
+    setIsCorrect(null);
+    
+    // Reset selection to first entry
+    if (crosswordData?.entries?.length > 0) {
+      const firstEntry = crosswordData.entries[0];
+      setSelectedEntry(firstEntry);
+      setSelectedCell({
+        row: firstEntry.position.row,
+        col: firstEntry.position.col
+      });
+      setCurrentDirection(firstEntry.direction);
+    }
+  };
+  
+  // Check answers function
+  const handleCheckAnswers = () => {
+    if (!isComplete) return;
+    const correct = checkAnswers();
+    setIsCorrect(correct);
+  };
+  
+  // Render a cell in the grid
+  cconst renderCell = (row, col) => {
+    if (!crosswordData?.grid?.grid) return null;
+    
+    // Check if this cell is valid - IMPORTANT: Use the same logic as Editor
+    const cellValue = crosswordData.grid.grid[row][col];
+    const isValidCell = cellValue !== ''; // This is the key fix
+    
+    if (!isValidCell) {
+      return (
+        <div 
+          key={getCellKey(row, col)} 
+          className="w-10 h-10 bg-black border border-black" // Black for empty cells
+        />
+      );
+    }
+    
+    // Check if this cell is the start of an entry
+    const isStartOfEntry = crosswordData.entries?.some(
+        entry => entry.position.row === row && entry.position.col === col
+      );
+      
+      const entryNumber = isStartOfEntry 
+        ? crosswordData.entries?.find(
+            entry => entry.position.row === row && entry.position.col === col
+          )?.number 
+        : null;
+      
+      const isSelected = selectedCell && 
+                        selectedCell.row === row && 
+                        selectedCell.col === col;
+      
+      const isHighlighted = selectedEntry && (
+        (selectedEntry.direction === 'across' && 
+         selectedEntry.position.row === row && 
+         col >= selectedEntry.position.col && 
+         col < selectedEntry.position.col + selectedEntry.answer.length) ||
+        (selectedEntry.direction === 'down' && 
+         selectedEntry.position.col === col && 
+         row >= selectedEntry.position.row && 
+         row < selectedEntry.position.row + selectedEntry.answer.length)
+      );
+      
+      const cellKey = getCellKey(row, col);
+      
+      return (
+        <div
+          key={cellKey}
+          className={`
+            w-10 h-10 relative border border-gray-300 bg-white
+            ${isSelected ? 'bg-blue-200 border-blue-500' : ''}
+            ${!isSelected && isHighlighted ? 'bg-blue-50' : ''}
+          `}
+          onClick={() => selectCell(row, col)}
         >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  if (!crosswordData) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">No Crossword Data Available</h2>
-        <p className="text-gray-600 text-center">Unable to generate a crossword from this playlist.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header with playlist info */}
-      {playlistInfo && (
-        <div className="mb-6 flex items-center gap-4">
-          {playlistInfo.imageUrl && (
-            <img 
-              src={playlistInfo.imageUrl} 
-              alt={playlistInfo.name} 
-              className="w-16 h-16 object-cover rounded-md shadow-md"
-            />
+          {entryNumber && (
+            <span className="absolute top-0 left-0 text-xs p-0.5">
+              {entryNumber}
+            </span>
           )}
-          <div>
-            <h1 className="text-2xl font-bold">{playlistInfo.name}</h1>
-            <p className="text-gray-600">By {playlistInfo.owner}</p>
-            {savedAnswers?.completed && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                Completed
-              </span>
-            )}
-            {!savedAnswers?.completed && getCompletion() && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {getCompletion()} Complete
-              </span>
-            )}
+          
+          {isSelected ? (
+            <input
+              ref={el => {
+                inputRefs.current[cellKey] = el;
+              }}
+              type="text"
+              maxLength="1"
+              value={getCellValue(row, col)}
+              onChange={(e) => handleInputChange(row, col, e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full h-full text-center bg-transparent focus:outline-none uppercase font-semibold"
+              autoComplete="off"
+            />
+          ) : (
+            <span className="flex items-center justify-center h-full text-lg font-semibold">
+              {getCellValue(row, col)}
+            </span>
+          )}
+        </div>
+      );
+    };
+  
+  // Render clues
+  const renderClues = () => {
+    if (!crosswordData?.entries) return null;
+    
+    const acrossClues = crosswordData.entries
+      .filter(entry => entry.direction === 'across')
+      .sort((a, b) => a.number - b.number);
+      
+    const downClues = crosswordData.entries
+      .filter(entry => entry.direction === 'down')
+      .sort((a, b) => a.number - b.number);
+    
+    return (
+      <div className="space-y-6">
+        {/* Across clues */}
+        <div>
+          <h4 className="font-medium text-sm text-gray-500 mb-2">Across</h4>
+          <ul className="space-y-2">
+            {acrossClues.map(entry => {
+              const isSelected = selectedEntry && 
+                              selectedEntry.number === entry.number && 
+                              selectedEntry.direction === 'across';
+              
+              return (
+                <li 
+                  key={`across-${entry.number}`}
+                  className={`p-2 rounded hover:bg-gray-50 cursor-pointer ${
+                    isSelected ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => {
+                    setCurrentDirection('across');
+                    setSelectedCell({
+                      row: entry.position.row,
+                      col: entry.position.col
+                    });
+                    setSelectedEntry(entry);
+                  }}
+                >
+                  <span className="font-medium">{entry.number}.</span> {entry.clue}
+                  <span className="text-xs text-gray-500 ml-1">({entry.answer.length})</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        
+        {/* Down clues */}
+        <div>
+          <h4 className="font-medium text-sm text-gray-500 mb-2">Down</h4>
+          <ul className="space-y-2">
+            {downClues.map(entry => {
+              const isSelected = selectedEntry && 
+                              selectedEntry.number === entry.number && 
+                              selectedEntry.direction === 'down';
+              
+              return (
+                <li 
+                  key={`down-${entry.number}`}
+                  className={`p-2 rounded hover:bg-gray-50 cursor-pointer ${
+                    isSelected ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => {
+                    setCurrentDirection('down');
+                    setSelectedCell({
+                      row: entry.position.row,
+                      col: entry.position.col
+                    });
+                    setSelectedEntry(entry);
+                  }}
+                >
+                  <span className="font-medium">{entry.number}.</span> {entry.clue}
+                  <span className="text-xs text-gray-500 ml-1">({entry.answer.length})</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+  
+  // Loading state
+  if (!crosswordData?.grid?.grid) {
+    return (
+      <div className="h-64 w-full bg-gray-100 flex items-center justify-center rounded">
+        <p className="text-gray-400">Loading crossword...</p>
+      </div>
+    );
+  }
+  
+  return (
+    <div>
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Crossword Grid */}
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="overflow-auto">
+            <div className="grid gap-px bg-gray-300 inline-block">
+              {crosswordData.grid.grid.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex">
+                  {row.map((_, colIndex) => renderCell(rowIndex, colIndex))}
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="mt-4 text-sm text-gray-500">
+            <p>Current Direction: <span className="font-medium">{currentDirection === 'across' ? 'Across' : 'Down'}</span></p>
+            <p>Press Space or Tab to toggle direction. Use arrow keys to navigate.</p>
           </div>
         </div>
-      )}
+        
+        {/* Clues */}
+        <div className="flex-1 border rounded-lg p-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-medium">Clues</h3>
+            
+            <div className="space-x-2">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                >
+                  Back
+                </button>
+              )}
+              
+              <button
+                onClick={handleReset}
+                className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded flex items-center text-sm"
+              >
+                <RotateCcw className="mr-1" size={14} />
+                Reset
+              </button>
+            </div>
+          </div>
+          
+          {renderClues()}
+        </div>
+      </div>
       
-      {/* Crossword grid */}
-      <div className="bg-white p-6 rounded-lg shadow-lg">
-        <CrosswordGrid 
-          table={crosswordData.table}
-          result={crosswordData.result}
-          initialAnswers={savedAnswers}
-          onComplete={handleComplete}
-          onSave={handleSave}
-          onShare={handleShare}
-        />
+      {/* Controls and status */}
+      <div className="mt-6 flex justify-center items-center gap-4">
+        {isComplete && (
+          <button
+            onClick={handleCheckAnswers}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded flex items-center"
+          >
+            <Check className="mr-2" size={16} />
+            Check Answers
+          </button>
+        )}
+        
+        {isCorrect !== null && (
+          <div className={`flex items-center gap-2 ${
+            isCorrect ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {isCorrect ? (
+              <>
+                <Check className="h-5 w-5" />
+                <span>Correct! Well done!</span>
+              </>
+            ) : (
+              <>
+                <X className="h-5 w-5" />
+                <span>Not quite right. Try again!</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 /**
- * CrosswordEditor component for displaying and editing a crossword grid
+ * CrosswordEditor component for displaying and managing the crossword grid in edit/preview mode
  * @param {Object} props - Component props
- * @param {Object} props.crosswordData - Crossword data
+ * @param {Array} props.questions - Selected questions for the crossword
+ * @param {Object} props.crosswordData - Crossword data with grid and entries
+ * @param {Function} props.onSave - Function to save the crossword
  * @param {Function} props.onBack - Function to go back
  */
-const CrosswordEditor = ({ crosswordData, onBack }) => {
+const CrosswordEditor = ({ questions, crosswordData, onSave, onBack }) => {
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [error, setError] = useState(null);
@@ -172,13 +174,22 @@ const CrosswordEditor = ({ crosswordData, onBack }) => {
           Crossword Preview
         </h2>
         
-        <button 
-          onClick={onBack}
-          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded flex items-center"
-        >
-          <ArrowLeft className="mr-2" size={18} />
-          Back to Questions
-        </button>
+        <div className="space-x-2">
+          <button 
+            onClick={onBack}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded flex items-center"
+          >
+            <ArrowLeft className="mr-2" size={18} />
+            Back to Questions
+          </button>
+          
+          <button 
+            onClick={onSave}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded"
+          >
+            Save Crossword
+          </button>
+        </div>
       </div>
       
       <div className="flex flex-col md:flex-row gap-6">
@@ -281,4 +292,4 @@ const CrosswordEditorLoading = ({ onBack }) => (
   </div>
 );
 
-export { CrosswordEditor, CrosswordEditorLoading };
+export default CrosswordEditor;

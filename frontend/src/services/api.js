@@ -2,42 +2,29 @@ import axios from 'axios';
 
 // Create axios instance with base URL
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api', // Make sure this matches your backend port
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: '/api'
 });
 
-// API functions for Spotify integration
+// Spotify API endpoints
 export const spotifyApi = {
-  getPlaylistData: (playlistUrl) => api.post('/playlist', { playlistUrl }),
+  getPlaylistData: (url) => {
+    return api.post('/playlist', { playlistUrl: url });
+  }
 };
 
-// API functions for question generation
+// Question API endpoints
 export const questionApi = {
-  generateQuestions: (trackData, options) => api.post('/generate-questions', { trackData, options }),
+  generateQuestions: (tracks) => {
+    return api.post('/generate-questions', { trackData: tracks }); // Changed 'tracks' to 'trackData'
+  }
 };
 
-// API functions for crossword generation
+// Crossword API endpoints
 export const crosswordApi = {
-  buildCrossword: (questions) => api.post('/build-crossword', { questions }),
-  
-  // New methods for interactive crossword features
-  saveProgress: (playlistId, answers) => api.post('/save-progress', { 
-    playlistId, 
-    answers 
-  }),
-  
-  loadProgress: (playlistId) => api.get(`/progress/${playlistId}`),
-  
-  shareProgress: (playlistId, crosswordData, answers) => api.post('/share', {
-    playlistId,
-    crosswordData,
-    answers
-  }),
-  
-  getSharedCrossword: (shareId) => api.get(`/shared/${shareId}`)
+  buildCrossword: (questions) => {
+    return api.post('/build-crossword', { questions });
+  }
 };
 
-// Export the axios instance for custom requests
+// Export the axios instance if needed
 export default api;

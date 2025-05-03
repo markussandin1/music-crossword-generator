@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { Music, RefreshCw, Check, Play, Edit } from 'lucide-react';
 import { spotifyApi, questionApi, crosswordApi } from './services/api';
-import { CrosswordEditor, CrosswordEditorLoading } from './components/CrosswordEditor';
-import PlayQuiz from './components/PlayQuiz';
-import DebugCrosswordData from './components/DebugCrosswordData';
+import CrosswordEditor from './components/CrosswordEditor';import PlayQuiz from './components/PlayQuiz';
+import ErrorBoundary from './components/ErrorBoundary';
+// Import the debug components
+import DebugPanel from './components/DebugPanel';
+import { 
+  mockPlaylistData, 
+  mockGeneratedQuestions, 
+  mockCrosswordData 
+} from './services/mockData';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -50,8 +56,29 @@ function MusicCrossword() {
   const [crosswordData, setCrosswordData] = useState(null);
   const [playMode, setPlayMode] = useState(false);
   
-  // Add debug mode state
-  const [debugMode, setDebugMode] = useState(false);
+  // Debug state
+  const [showDebugPanel, setShowDebugPanel] = useState(true);
+  const [isDevelopment, setIsDevelopment] = useState(true);
+  
+  // Keyboard shortcut to toggle debug panel
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F8') {
+        e.preventDefault();
+        setShowDebugPanel(prev => !prev);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+  
+  // Check if in development mode
+  useEffect(() => {
+    // In a real app, you might check process.env.NODE_ENV
+    // For now, we'll just hardcode it to true for demonstration
+    setIsDevelopment(true);
+  }, []);
   
   // Mutation for fetching playlist data
   const playlistMutation = useMutation({
@@ -81,7 +108,6 @@ function MusicCrossword() {
     },
     onError: (error) => {
       console.error('Error building crossword:', error);
-      // Keep the user on the questions page to select different questions
       alert('Could not build a crossword with these questions. Try selecting different questions.');
     }
   });
@@ -120,12 +146,38 @@ function MusicCrossword() {
     setPlayMode(false);
   };
 
-  const toggleDebugMode = () => {
-    setDebugMode(!debugMode);
-  };
-  
   const togglePlayMode = () => {
     setPlayMode(!playMode);
+  };
+  
+  // Debug functions
+  const handleLoadMockPlaylist = () => {
+    console.log('Loading mock playlist data');
+    setPlaylistData(mockPlaylistData);
+    setStep(2);
+  };
+  
+  const handleLoadMockQuestions = () => {
+    console.log('Loading mock questions');
+    setGeneratedQuestions(mockGeneratedQuestions);
+    setStep(3);
+  };
+  
+  const handleLoadMockCrossword = () => {
+    console.log('Loading mock crossword');
+    setCrosswordData(mockCrosswordData);
+    setStep(4);
+  };
+  
+  const handleResetState = () => {
+    console.log('Resetting application state');
+    setStep(1);
+    setPlaylistUrl('');
+    setPlaylistData(null);
+    setGeneratedQuestions([]);
+    setSelectedQuestions([]);
+    setCrosswordData(null);
+    setPlayMode(false);
   };
   
   // Sanitize questions for compatible answers
@@ -137,19 +189,15 @@ function MusicCrossword() {
   
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
-      {/* Developer Tools (hide in production) */}
-      <div className="mb-4 text-right">
-        <button
-          onClick={toggleDebugMode}
-          className="text-xs px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
-        >
-          {debugMode ? 'Hide Debug' : 'Show Debug'}
-        </button>
-      </div>
-      
-      {/* Debug Data (Only shown in debug mode) */}
-      {debugMode && step === 4 && (
-        <DebugCrosswordData crosswordData={crosswordData} />
+      {/* Developer Tools (only in development mode) */}
+      {isDevelopment && (
+        <DebugPanel
+          isVisible={showDebugPanel}
+          onLoadMockPlaylist={handleLoadMockPlaylist}
+          onLoadMockQuestions={handleLoadMockQuestions}
+          onLoadMockCrossword={handleLoadMockCrossword}
+          onReset={handleResetState}
+        />
       )}
       
       {/* Progress Steps (Only show if not in play mode) */}
@@ -226,6 +274,20 @@ function MusicCrossword() {
               <li>spotify:playlist:37i9dQZF1DXcBWIGoYBM5M</li>
             </ul>
           </div>
+          
+          {isDevelopment && (
+            <div className="mt-6 border-t pt-4">
+              <p className="text-sm text-gray-500">
+                Developer: Use the debug panel in the bottom right or click below to load test data
+              </p>
+              <button
+                onClick={handleLoadMockPlaylist}
+                className="mt-2 text-sm text-primary-600 hover:text-primary-700 underline"
+              >
+                Load test playlist data
+              </button>
+            </div>
+          )}
         </div>
       )}
       
@@ -287,6 +349,17 @@ function MusicCrossword() {
             >
               ← Back to playlist selection
             </button>
+            
+            {isDevelopment && (
+              <div className="mt-4 border-t pt-4">
+                <button
+                  onClick={handleLoadMockQuestions}
+                  className="text-sm text-primary-600 hover:text-primary-700 underline"
+                >
+                  Skip and load test questions
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -383,6 +456,34 @@ function MusicCrossword() {
               </button>
             </div>
           </div>
+          
+          {isDevelopment && selectedQuestions.length < 5 && (
+            <div className="mt-4 border-t pt-4">
+              <button
+                onClick={() => {
+                  // Select the first 5 valid questions
+                  const validQuestions = generatedQuestions
+                    .filter(validateQuestion)
+                    .slice(0, 5);
+                  setSelectedQuestions(validQuestions);
+                }}
+                className="text-sm text-primary-600 hover:text-primary-700 underline"
+              >
+                Auto-select 5 valid questions
+              </button>
+            </div>
+          )}
+          
+          {isDevelopment && (
+            <div className="mt-4 border-t pt-4">
+              <button
+                onClick={handleLoadMockCrossword}
+                className="text-sm text-primary-600 hover:text-primary-700 underline"
+              >
+                Skip and load test crossword
+              </button>
+            </div>
+          )}
         </div>
       )}
       
@@ -421,16 +522,18 @@ function MusicCrossword() {
             </div>
             
             {playMode ? (
-              <PlayQuiz 
-                crosswordData={crosswordData} 
-                onReset={() => setPlayMode(false)} 
-              />
-            ) : (
-              <CrosswordEditor 
-                crosswordData={crosswordData} 
-                onBack={handleBackToQuestions} 
-              />
-            )}
+  <ErrorBoundary onReset={() => setPlayMode(false)}>
+    <PlayQuiz 
+      crosswordData={crosswordData} 
+      onReset={() => setPlayMode(false)} 
+    />
+  </ErrorBoundary>
+) : (
+  <CrosswordEditor 
+    crosswordData={crosswordData} 
+    onBack={handleBackToQuestions} 
+  />
+)}
           </>
         ) : (
           <div className="text-center py-12">

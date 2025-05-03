@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Music, RefreshCw, Check, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { spotifyApi, questionApi } from '../services/api';
+import { spotifyApi, questionApi, crosswordApi } from '../services/api';
 import CrosswordEditor from './CrosswordEditor';
+import CrosswordPlayer from './CrosswordPlayer';
 
 export const CreateQuiz = () => {
   // States for the quiz creation process
@@ -12,6 +13,7 @@ export const CreateQuiz = () => {
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [selectedQuestions, setSelectedQuestions] = useState([]);
   const [crosswordData, setCrosswordData] = useState(null);
+  const [mode, setMode] = useState('create'); // 'create' or 'play'
   
   // Mutation for fetching playlist data
   const playlistMutation = useMutation({
@@ -28,6 +30,16 @@ export const CreateQuiz = () => {
     onSuccess: (response) => {
       setGeneratedQuestions(response.data.questions);
       setStep(3);
+    }
+  });
+  
+  // Mutation for building crossword
+  const crosswordMutation = useMutation({
+    mutationFn: (questions) => crosswordApi.buildCrossword(questions),
+    onSuccess: (response) => {
+      setCrosswordData(response.data);
+      setStep(4);
+      setMode('create'); // Default to create mode when new crossword is built
     }
   });
   
@@ -59,8 +71,8 @@ export const CreateQuiz = () => {
   
   // Handle building the crossword
   const handleBuildCrossword = () => {
-    // This will be implemented in the next part
-    setStep(4);
+    if (selectedQuestions.length < 5) return;
+    crosswordMutation.mutate(selectedQuestions);
   };
   
   return (
@@ -247,22 +259,70 @@ export const CreateQuiz = () => {
               <button
                 onClick={handleBuildCrossword}
                 className="btn btn-primary"
-                disabled={selectedQuestions.length < 5}
+                disabled={selectedQuestions.length < 5 || crosswordMutation.isPending}
               >
-                Build Crossword
+                {crosswordMutation.isPending ? (
+                  <>
+                    <RefreshCw className="animate-spin mr-2" size={18} />
+                    Building Crossword...
+                  </>
+                ) : (
+                  'Build Crossword'
+                )}
               </button>
             </div>
           </div>
+          
+          {crosswordMutation.isError && (
+            <p className="text-red-500 mt-2">
+              {crosswordMutation.error.response?.data?.error || 'Failed to build crossword'}
+            </p>
+          )}
         </div>
       )}
       
-      {/* Step 4: Crossword Editor */}
-      {step === 4 && selectedQuestions.length >= 5 && (
-        <CrosswordEditor 
-          questions={selectedQuestions}
-          onSave={() => {/* Save functionality will be added later */}}
-          onBack={() => setStep(3)}
-        />
+      {/* Step 4: Crossword Editor/Player */}
+      {step === 4 && crosswordData && (
+        <div>
+          {/* Mode toggle */}
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setMode('create')}
+              className={`px-4 py-2 rounded transition-colors ${
+                mode === 'create' 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+            >
+              Edit/Preview
+            </button>
+            <button
+              onClick={() => setMode('play')}
+              className={`px-4 py-2 rounded transition-colors ${
+                mode === 'play' 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+            >
+              Play
+            </button>
+          </div>
+          
+          {/* Render appropriate component based on mode */}
+          {mode === 'create' ? (
+            <CrosswordEditor 
+              questions={selectedQuestions}
+              crosswordData={crosswordData}
+              onSave={() => {/* Save functionality will be added later */}}
+              onBack={() => setStep(3)}
+            />
+          ) : (
+            <CrosswordPlayer 
+              crosswordData={crosswordData}
+              onBack={() => setStep(3)}
+            />
+          )}
+        </div>
       )}
     </div>
   );
