@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { Music, RefreshCw, Check, Play, Edit } from 'lucide-react';
-import { spotifyApi, questionApi, crosswordApi } from './services/api';
 import CrosswordEditor from './components/CrosswordEditor';import PlayQuiz from './components/PlayQuiz';
 import ErrorBoundary from './components/ErrorBoundary';
+import { spotifyApi, questionApi, crosswordApi, luckyApi } from './services/api';
 // Import the debug components
 import DebugPanel from './components/DebugPanel';
 import { 
@@ -54,8 +54,8 @@ function MusicCrossword() {
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [selectedQuestions, setSelectedQuestions] = useState([]);
   const [crosswordData, setCrosswordData] = useState(null);
-  const [playMode, setPlayMode] = useState(false);
-  
+  const [playMode, setPlayMode] = useState(false); // Add this line
+
   // Debug state
   const [showDebugPanel, setShowDebugPanel] = useState(true);
   const [isDevelopment, setIsDevelopment] = useState(true);
@@ -111,6 +111,25 @@ function MusicCrossword() {
       alert('Could not build a crossword with these questions. Try selecting different questions.');
     }
   });
+
+  // Add this after the existing mutations
+  const luckyCrosswordMutation = useMutation({
+  mutationFn: (url) => luckyApi.createLuckyCrossword(url),
+  onSuccess: (response) => {
+    console.log('Lucky crossword response:', response);
+    setCrosswordData(response.data.data);
+    setStep(4);
+    setPlayMode(true); // Set to play mode
+  },
+  onError: (error) => {
+      console.error('Full error object:', error);
+      console.error('Error response:', error.response);
+      console.error('Error response data:', error.response?.data);
+      console.error('Error message:', error.message);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to create lucky crossword';
+      alert(errorMessage);
+    }
+  });
   
   const handlePlaylistSubmit = (e) => {
     e.preventDefault();
@@ -122,7 +141,12 @@ function MusicCrossword() {
     if (!playlistData?.tracks) return;
     questionsMutation.mutate(playlistData.tracks);
   };
-  
+
+  // Add this function with your other handlers
+const handleLuckyCrossword = () => {
+  if (!playlistUrl) return;
+  luckyCrosswordMutation.mutate(playlistUrl);
+};
   const toggleQuestionSelection = (question) => {
     setSelectedQuestions(prev => {
       const isSelected = prev.some(q => q.answer === question.answer);
@@ -292,63 +316,83 @@ function MusicCrossword() {
       )}
       
       {/* Step 2: Playlist loaded, generate questions */}
-      {step === 2 && playlistData && (
-        <div>
-          <div className="flex items-start mb-6">
-            {playlistData.images?.[0]?.url && (
-              <img 
-                src={playlistData.images[0].url} 
-                alt={playlistData.name} 
-                className="w-32 h-32 object-cover rounded-md mr-4"
-              />
-            )}
-            <div>
-              <h2 className="text-xl font-semibold">{playlistData.name}</h2>
-              <p className="text-gray-600">{playlistData.description}</p>
-              <p className="mt-2">
-                <span className="font-medium">{playlistData.tracksCount}</span> tracks
-              </p>
-              <p className="text-sm text-gray-500">
-                By {playlistData.owner.displayName || playlistData.owner.id}
-              </p>
-            </div>
-          </div>
-          
-          <div className="border-t pt-4">
-            <h3 className="font-medium mb-2">Generate Questions</h3>
-            <p className="text-gray-600 mb-4">
-              We'll use AI to generate crossword questions based on this playlist.
-              This might take a minute or two depending on the playlist size.
-            </p>
-            
-            <button
-              onClick={handleGenerateQuestions}
-              className="btn btn-primary w-full"
-              disabled={questionsMutation.isPending}
-            >
-              {questionsMutation.isPending ? (
-                <>
-                  <RefreshCw className="animate-spin mr-2" size={18} />
-                  Generating Questions...
-                </>
-              ) : (
-                'Generate Questions'
-              )}
-            </button>
-            
-            {questionsMutation.isError && (
-              <p className="text-red-500 mt-2">
-                {questionsMutation.error.response?.data?.error || 'Failed to generate questions'}
-              </p>
-            )}
-            
-            <button 
-              onClick={() => setStep(1)} 
-              className="mt-4 text-primary-600 hover:underline"
-              disabled={questionsMutation.isPending}
-            >
-              ← Back to playlist selection
-            </button>
+{step === 2 && playlistData && (
+  <div className="bg-white p-6 rounded-lg shadow-md">
+    {/* ... existing playlist info display ... */}
+    
+    <div className="border-t pt-4">
+      <h3 className="font-medium mb-2">Generate Questions</h3>
+      <p className="text-gray-600 mb-4">
+        We'll use AI to generate crossword questions based on this playlist.
+        This might take a minute or two depending on the playlist size.
+      </p>
+      
+      {/* Original button */}
+      <button
+        onClick={handleGenerateQuestions}
+        className="btn btn-primary w-full mb-4"
+        disabled={questionsMutation.isPending}
+      >
+        {questionsMutation.isPending ? (
+          <>
+            <RefreshCw className="animate-spin mr-2" size={18} />
+            Generating Questions...
+          </>
+        ) : (
+          'Generate Questions'
+        )}
+      </button>
+      
+      {/* New Lucky button */}
+      <div className="relative mb-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-300" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-2 bg-white text-gray-500">OR</span>
+        </div>
+      </div>
+      
+      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+  <p className="text-blue-800 text-sm">
+    Want a ready-to-solve crossword based on your playlist? We'll automatically create a crossword puzzle that you can solve right away!
+  </p>
+</div>
+
+<button
+  onClick={handleLuckyCrossword}
+  className="btn btn-secondary w-full"
+  disabled={luckyCrosswordMutation.isPending}
+>
+  {luckyCrosswordMutation.isPending ? (
+    <>
+      <RefreshCw className="animate-spin mr-2" size={18} />
+      Building Your Crossword...
+    </>
+  ) : (
+    "Build & Play Crossword"
+  )}
+</button>
+      
+      {questionsMutation.isError && (
+        <p className="text-red-500 mt-2">
+          {questionsMutation.error.response?.data?.error || 'Failed to generate questions'}
+        </p>
+      )}
+      
+      {luckyCrosswordMutation.isError && (
+        <p className="text-red-500 mt-2">
+          {luckyCrosswordMutation.error.response?.data?.error || 'Failed to create lucky crossword'}
+        </p>
+      )}
+      
+      <button 
+        onClick={() => setStep(1)} 
+        className="mt-4 text-primary-600 hover:underline"
+        disabled={questionsMutation.isPending || luckyCrosswordMutation.isPending}
+      >
+        ← Back to playlist selection
+      </button>
             
             {isDevelopment && (
               <div className="mt-4 border-t pt-4">
@@ -487,51 +531,52 @@ function MusicCrossword() {
         </div>
       )}
       
-      {/* Step 4: Crossword Editor/Player */}
-      {step === 4 && (
-        crosswordMutation.isPending ? (
-          <CrosswordEditorLoading onBack={handleBackToQuestions} />
-        ) : crosswordData ? (
-          <>
-            {/* Toggle between edit and play mode */}
-            <div className="flex justify-end mb-4">
-              <div className="inline-flex rounded-md shadow-sm" role="group">
-                <button
-                  type="button"
-                  className={`px-4 py-2 text-sm font-medium ${!playMode 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                    rounded-l-lg border border-gray-200 flex items-center`}
-                  onClick={() => setPlayMode(false)}
-                >
-                  <Edit className="mr-2" size={16} />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className={`px-4 py-2 text-sm font-medium ${playMode 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                    rounded-r-lg border border-gray-200 flex items-center`}
-                  onClick={() => setPlayMode(true)}
-                >
-                  <Play className="mr-2" size={16} />
-                  Play
-                </button>
-              </div>
-            </div>
-            
-            {playMode ? (
-  <ErrorBoundary onReset={() => setPlayMode(false)}>
-    <PlayQuiz 
-      crosswordData={crosswordData} 
-      onReset={() => setPlayMode(false)} 
-    />
-  </ErrorBoundary>
-) : (
-  <CrosswordEditor 
-    crosswordData={crosswordData} 
-    onBack={handleBackToQuestions} 
+     {/* Step 4: Crossword Editor/Player */}
+{step === 4 && (
+  crosswordMutation.isPending ? (
+    <CrosswordEditorLoading onBack={handleBackToQuestions} />
+  ) : crosswordData ? (
+    <>
+      {!playMode && (
+        <div className="flex justify-end mb-4">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm font-medium ${!playMode 
+                ? 'bg-primary-600 text-white' 
+                : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                rounded-l-lg border border-gray-200 flex items-center`}
+              onClick={() => setPlayMode(false)}
+            >
+              <Edit className="mr-2" size={16} />
+              Edit
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm font-medium ${playMode 
+                ? 'bg-primary-600 text-white' 
+                : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                rounded-r-lg border border-gray-200 flex items-center`}
+              onClick={() => setPlayMode(true)}
+            >
+              <Play className="mr-2" size={16} />
+              Play
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {playMode ? (
+        <ErrorBoundary onReset={() => setPlayMode(false)}>
+          <PlayQuiz 
+            crosswordData={crosswordData} 
+            onReset={() => setPlayMode(false)} 
+          />
+        </ErrorBoundary>
+      ) : (
+        <CrosswordEditor 
+          crosswordData={crosswordData} 
+          onBack={handleBackToQuestions}
   />
 )}
           </>

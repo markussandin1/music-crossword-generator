@@ -3,6 +3,8 @@ const router = express.Router();
 const playlistController = require('../controllers/playlistController');
 const questionController = require('../controllers/questionController');
 const crosswordController = require('../controllers/crosswordController');
+const luckyController = require('../controllers/luckyController');
+
 
 // Default route for testing
 router.get('/', (req, res) => {
@@ -17,5 +19,10 @@ router.post('/generate-questions', questionController.generateQuestions);
 
 // Crossword routes
 router.post('/build-crossword', crosswordController.buildCrossword);
+
+// Luck crossword routes
+
+router.post('/lucky-crossword', luckyController.createLuckyCrossword);
+
 
 module.exports = router;

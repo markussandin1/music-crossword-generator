@@ -25,6 +25,12 @@ export const crosswordApi = {
     return api.post('/build-crossword', { questions });
   }
 };
+// Lucky crossword
+export const luckyApi = {
+  createLuckyCrossword: (url) => {
+    return api.post('/lucky-crossword', { playlistUrl: url });
+  }
+};
 
 // Export the axios instance if needed
 export default api;
