@@ -1,6 +1,9 @@
+// backend/src/controllers/luckyController.js
+
 const spotifyService = require('../services/spotifyService');
 const openaiService = require('../services/openaiService');
 const crosswordService = require('../services/crosswordService');
+const songGroupingService = require('../services/songGroupingService');
 
 /**
  * Select best questions for crossword building
@@ -63,6 +66,7 @@ const createLuckyCrossword = async (req, res) => {
       });
     }
     
+    
     // Step 1: Get playlist data
     console.log('Fetching playlist data...');
     const playlistData = await spotifyService.getPlaylistData(playlistUrl);
@@ -83,12 +87,21 @@ const createLuckyCrossword = async (req, res) => {
     console.log('Building crossword...');
     const crosswordData = crosswordService.buildCrossword(selectedQuestions);
     
-    console.log('Lucky crossword created successfully');
+    // NEW: Step 5: Process playlist data for quiz features
+    console.log('Enhancing crossword with song grouping...');
+    const enhancedCrossword = songGroupingService.processPlaylistForQuiz(
+      questions,  // Use ALL generated questions for better matching
+      playlistData,
+      crosswordData
+    );
+    // In luckyController.js, add this debug log:
+console.log('Enhanced crossword song groups:', enhancedCrossword.songGroups?.length);
+    console.log('Lucky crossword created successfully with song grouping');
     
-    // Return crossword data
+    // Return enhanced crossword data with song groups
     return res.status(200).json({
       success: true,
-      data: crosswordData
+      data: enhancedCrossword
     });
   } catch (error) {
     console.error('Error creating lucky crossword:', error);
@@ -100,10 +113,53 @@ const createLuckyCrossword = async (req, res) => {
     return res.status(500).json({ 
       error: 'Failed to create lucky crossword',
       message: error.message
+      
+    });
+  }
+};
+
+/**
+ * Create a quiz from an existing crossword
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const createQuizFromCrossword = async (req, res) => {
+  try {
+    const { crosswordData, questions, playlistData } = req.body;
+    
+    console.log('Creating quiz from existing crossword');
+    
+    if (!crosswordData || !questions || !playlistData) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters: crosswordData, questions, playlistData' 
+      });
+    }
+    
+    // Process playlist data for quiz features
+    console.log('Enhancing crossword with song grouping...');
+    const enhancedCrossword = songGroupingService.processPlaylistForQuiz(
+      questions,
+      playlistData,
+      crosswordData
+    );
+    
+    console.log('Quiz created successfully from existing crossword');
+    
+    // Return enhanced crossword data with song groups
+    return res.status(200).json({
+      success: true,
+      data: enhancedCrossword
+    });
+  } catch (error) {
+    console.error('Error creating quiz from crossword:', error);
+    return res.status(500).json({ 
+      error: 'Failed to create quiz from crossword',
+      message: error.message
     });
   }
 };
 
 module.exports = {
-  createLuckyCrossword
+  createLuckyCrossword,
+  createQuizFromCrossword
 };
