@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
-import { Music, RefreshCw, Check, Play, Edit } from 'lucide-react';
 import CrosswordEditor from './components/CrosswordEditor';import PlayQuiz from './components/PlayQuiz';
 import ErrorBoundary from './components/ErrorBoundary';
 import { spotifyApi, questionApi, crosswordApi, luckyApi } from './services/api';
@@ -11,6 +10,10 @@ import {
   mockGeneratedQuestions, 
   mockCrosswordData 
 } from './services/mockData';
+import HostMode from './components/HostModeInterface';
+import HostModeButton from './components/HostModeButton';
+import { Music, Play, Pause, Edit, RefreshCw, Check } from 'lucide-react';
+
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -55,9 +58,11 @@ function MusicCrossword() {
   const [selectedQuestions, setSelectedQuestions] = useState([]);
   const [crosswordData, setCrosswordData] = useState(null);
   const [playMode, setPlayMode] = useState(false); // Add this line
+  const [isHostMode, setIsHostMode] = useState(false);
+  const [enhancedCrosswordData, setEnhancedCrosswordData] = useState(null);
 
   // Debug state
-  const [showDebugPanel, setShowDebugPanel] = useState(true);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [isDevelopment, setIsDevelopment] = useState(true);
   
   // Keyboard shortcut to toggle debug panel
@@ -117,7 +122,12 @@ function MusicCrossword() {
   mutationFn: (url) => luckyApi.createLuckyCrossword(url),
   onSuccess: (response) => {
     console.log('Lucky crossword response:', response);
+    console.log('Full lucky crossword data:', JSON.stringify(response.data.data, null, 2));
+  console.log('Song groups in response:', response.data.data.songGroups);
+  console.log('Number of song groups:', response.data.data.songGroups?.length || 0);
     setCrosswordData(response.data.data);
+    setEnhancedCrosswordData(response.data.data); // Add this line
+
     setStep(4);
     setPlayMode(true); // Set to play mode
   },
@@ -142,6 +152,20 @@ function MusicCrossword() {
     questionsMutation.mutate(playlistData.tracks);
   };
 
+  // NEW MUTATION for enhanced crossword
+const enhanceCrosswordMutation = useMutation({
+  mutationFn: (data) => luckyApi.createQuizFromCrossword(data),
+  onSuccess: (response) => {
+    console.log('Enhanced crossword response:', response.data.data);
+    setEnhancedCrosswordData(response.data.data);
+    setIsHostMode(true);
+  },
+  onError: (error) => {
+    console.error('Error enhancing crossword:', error);
+    alert('Could not prepare the quiz. Please try again.');
+  }
+});
+
   // Add this function with your other handlers
 const handleLuckyCrossword = () => {
   if (!playlistUrl) return;
@@ -163,6 +187,35 @@ const handleLuckyCrossword = () => {
     if (selectedQuestions.length < 5) return;
     setCrosswordData(null); // Reset previous data
     crosswordMutation.mutate(selectedQuestions);
+  };
+
+   // Toggle between host mode and play mode
+   const toggleHostMode = () => {
+    if (isHostMode) {
+      // Switch back to normal play mode
+      setIsHostMode(false);
+      return;
+    }
+    
+    // If we don't have enhanced data yet, fetch it
+    if (!enhancedCrosswordData) {
+      if (!crosswordData || !playlistData) {
+        console.error('Missing crossword or playlist data');
+        return;
+      }
+      
+      // Prepare data for the API
+      const requestData = {
+        crosswordData,
+        questions: generatedQuestions,
+        playlistData
+      };
+      
+      enhanceCrosswordMutation.mutate(requestData);
+    } else {
+      // We already have the data, just switch modes
+      setIsHostMode(true);
+    }
   };
   
   const handleBackToQuestions = () => {
@@ -210,19 +263,21 @@ const handleLuckyCrossword = () => {
     const answer = question.answer.toUpperCase().replace(/[^A-Z]/g, '');
     return answer.length >= 3 && /^[A-Z]+$/.test(answer);
   };
-  
+  //
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       {/* Developer Tools (only in development mode) */}
       {isDevelopment && (
-        <DebugPanel
-          isVisible={showDebugPanel}
-          onLoadMockPlaylist={handleLoadMockPlaylist}
-          onLoadMockQuestions={handleLoadMockQuestions}
-          onLoadMockCrossword={handleLoadMockCrossword}
-          onReset={handleResetState}
-        />
-      )}
+        <>
+          <DebugPanel
+            isVisible={showDebugPanel}
+            onLoadMockPlaylist={handleLoadMockPlaylist}
+            onLoadMockQuestions={handleLoadMockQuestions}
+            onLoadMockCrossword={handleLoadMockCrossword}
+            onReset={handleResetState}
+          />
+        </>
+      )} 
       
       {/* Progress Steps (Only show if not in play mode) */}
       {!playMode && (
@@ -407,6 +462,8 @@ const handleLuckyCrossword = () => {
           </div>
         </div>
       )}
+
+      
       
       {/* Step 3: Select questions for crossword */}
       {step === 3 && generatedQuestions.length > 0 && (
@@ -531,69 +588,88 @@ const handleLuckyCrossword = () => {
         </div>
       )}
       
-     {/* Step 4: Crossword Editor/Player */}
+{/* Step 4: Crossword Editor/Player */}
 {step === 4 && (
   crosswordMutation.isPending ? (
     <CrosswordEditorLoading onBack={handleBackToQuestions} />
   ) : crosswordData ? (
     <>
-      {!playMode && (
-        <div className="flex justify-end mb-4">
-          <div className="inline-flex rounded-md shadow-sm" role="group">
-            <button
-              type="button"
-              className={`px-4 py-2 text-sm font-medium ${!playMode 
-                ? 'bg-primary-600 text-white' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                rounded-l-lg border border-gray-200 flex items-center`}
-              onClick={() => setPlayMode(false)}
-            >
-              <Edit className="mr-2" size={16} />
-              Edit
-            </button>
-            <button
-              type="button"
-              className={`px-4 py-2 text-sm font-medium ${playMode 
-                ? 'bg-primary-600 text-white' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                rounded-r-lg border border-gray-200 flex items-center`}
-              onClick={() => setPlayMode(true)}
-            >
-              <Play className="mr-2" size={16} />
-              Play
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {playMode ? (
-        <ErrorBoundary onReset={() => setPlayMode(false)}>
-          <PlayQuiz 
-            crosswordData={crosswordData} 
-            onReset={() => setPlayMode(false)} 
-          />
-        </ErrorBoundary>
+      {/* Check if we're in host mode first */}
+      {isHostMode && enhancedCrosswordData ? (
+        <HostMode 
+          crosswordData={enhancedCrosswordData}
+          onExit={() => setIsHostMode(false)}
+          onTogglePlayMode={() => setIsHostMode(false)}
+        />
       ) : (
-        <CrosswordEditor 
-          crosswordData={crosswordData} 
-          onBack={handleBackToQuestions}
-  />
-)}
-          </>
-        ) : (
-          <div className="text-center py-12">
-            <p className="text-red-500">
-              Failed to build crossword. Please try again with different questions.
-            </p>
-            <button 
-              onClick={handleBackToQuestions}
-              className="mt-4 btn btn-primary"
-            >
-              Back to Questions
-            </button>
+        <>
+          {/* Mode toggle buttons */}
+          <div className="flex justify-end mb-4 space-x-2">
+            {/* Existing mode toggle */}
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                className={`px-4 py-2 text-sm font-medium ${!playMode 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                  rounded-l-lg border border-gray-200 flex items-center`}
+                onClick={() => setPlayMode(false)}
+              >
+                <Edit className="mr-2" size={16} />
+                Edit
+              </button>
+              <button
+                type="button"
+                className={`px-4 py-2 text-sm font-medium ${playMode 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-white text-gray-700 hover:bg-gray-50'} 
+                  rounded-r-lg border border-gray-200 flex items-center`}
+                onClick={() => setPlayMode(true)}
+              >
+                <Play className="mr-2" size={16} />
+                Play
+              </button>
+            </div>
+            
+            {/* NEW: Host Mode button */}
+            <HostModeButton 
+              isHostMode={isHostMode}
+              onClick={toggleHostMode}
+              disabled={enhanceCrosswordMutation.isPending}
+            />
           </div>
-        )
+          
+          {/* Original component rendering based on playMode */}
+          {playMode ? (
+            <ErrorBoundary onReset={() => setPlayMode(false)}>
+              <PlayQuiz 
+                crosswordData={crosswordData} 
+                onReset={() => setPlayMode(false)} 
+              />
+            </ErrorBoundary>
+          ) : (
+            <CrosswordEditor 
+              crosswordData={crosswordData} 
+              onBack={handleBackToQuestions}
+            />
+          )}
+        </>
       )}
+    </>
+  ) : (
+    <div className="text-center py-12">
+      <p className="text-red-500">
+        Failed to build crossword. Please try again with different questions.
+      </p>
+      <button 
+        onClick={handleBackToQuestions}
+        className="mt-4 btn btn-primary"
+      >
+        Back to Questions
+      </button>
+    </div>
+  )
+)}
     </div>
   );
 }

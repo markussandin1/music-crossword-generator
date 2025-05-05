@@ -1,8 +1,4 @@
 /**
- * Improved Crossword Service for generating crossword puzzles
- */
-
-/**
  * Build a crossword grid from a set of questions and answers
  * @param {Array} questions - Array of question objects with answer property
  * @returns {Object} Crossword grid and entry data
@@ -17,7 +13,10 @@ const buildCrossword = (questions) => {
   let words = questions.map(q => ({
     word: q.answer.toUpperCase().replace(/[^A-Z]/g, ''), // Remove non-letter characters
     question: q.question,
-    originalAnswer: q.answer // Keep the original answer for reference
+    originalAnswer: q.answer, // Keep the original answer for reference
+    trackId: q.trackId,        // Preserve track ID from the question
+    trackName: q.trackName,    // Preserve track name for debugging
+    artists: q.artists         // Preserve artists information
   }));
 
   console.log('Processing words:', words);
@@ -78,7 +77,10 @@ const buildCrossword = (questions) => {
         clue: firstWordData.question,
         position: { row: position.row, col: position.col },
         direction: attempt % 2 === 0 ? 'across' : 'down',  // Alternate directions
-        number: 1
+        number: 1,
+        trackId: firstWordData.trackId,      // Preserve track ID
+        trackName: firstWordData.trackName,  // Preserve track name
+        artists: firstWordData.artists       // Preserve artists
       };
       
       placeWordInGrid(grid, firstWordData.word, {
@@ -119,7 +121,10 @@ const buildCrossword = (questions) => {
             clue: wordData.question,
             position: { row: placement.row, col: placement.col },
             direction: placement.direction,
-            number: entryNumber++
+            number: entryNumber++,
+            trackId: wordData.trackId,      // Preserve track ID
+            trackName: wordData.trackName,  // Preserve track name
+            artists: wordData.artists       // Preserve artists
           });
           usedWords.add(wordData.word);
           placedWords++;
@@ -128,6 +133,7 @@ const buildCrossword = (questions) => {
           console.log(`Could not place word: ${wordData.word}`);
         }
       }
+      
       
       // Require at least 3 words to be placed for a valid crossword
       if (placedWords < 3) {
