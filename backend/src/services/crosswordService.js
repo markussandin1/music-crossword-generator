@@ -542,6 +542,17 @@ const numberEntries = (entries) => {
   });
 };
 
+/**
+ * Generate crossword data from selected questions
+ * @param {Array} questions - Array of selected question objects
+ * @returns {Object} - Crossword data
+ */
+const generateCrossword = (questions) => {
+  // Use the actual buildCrossword function to generate crossword data
+  return buildCrossword(questions);
+};
+
 module.exports = {
-  buildCrossword
+  buildCrossword,
+  generateCrossword
 };

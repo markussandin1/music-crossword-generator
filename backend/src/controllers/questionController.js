@@ -26,8 +26,8 @@ const generateQuestions = async (req, res) => {
       return res.status(500).json({ error: 'Failed to generate questions' });
     }
     
-    // Associate each question with a track
-    const enhancedQuestions = associateQuestionsWithTracks(questions, trackData);
+    // Enhance questions with additional track metadata
+    const enhancedQuestions = enhanceQuestionsWithTrackData(questions, trackData);
     
     console.log(`Generated ${enhancedQuestions.length} questions successfully`);
     
@@ -51,6 +51,13 @@ const generateQuestions = async (req, res) => {
       return res.status(500).json({ error: 'Failed to generate valid questions' });
     }
     
+    if (error.message.includes('valid track IDs')) {
+      return res.status(500).json({ 
+        error: 'Track association error',
+        message: error.message 
+      });
+    }
+    
     return res.status(500).json({ 
       error: 'Internal server error',
       message: error.message
@@ -59,72 +66,50 @@ const generateQuestions = async (req, res) => {
 };
 
 /**
- * Associate questions with specific tracks
- * @param {Array} questions - Array of generated questions
+ * Enhance questions with additional track metadata
+ * @param {Array} questions - Array of generated questions with trackId
  * @param {Array} tracks - Array of track objects
- * @returns {Array} - Questions with track associations
+ * @returns {Array} - Questions with enhanced track data
  */
-const associateQuestionsWithTracks = (questions, tracks) => {
-  console.log('Associating questions with tracks...');
+const enhanceQuestionsWithTrackData = (questions, tracks) => {
+  console.log('Enhancing questions with track metadata...');
   
-  const enhancedQuestions = questions.map(question => {
-    // Find the track that's most related to this question
-    const matchingTrack = findRelatedTrack(question, tracks);
-    
-    if (matchingTrack) {
-      console.log(`Question "${question.question.substring(0, 30)}..." matched to track "${matchingTrack.name}"`);
-      return {
-        ...question,
-        trackId: matchingTrack.id,
-        trackName: matchingTrack.name,
-        artists: matchingTrack.artists
-      };
-    }
-    
-    console.log(`Question "${question.question.substring(0, 30)}..." has no clear track association`);
-    return question;
+  // Create a map of track IDs to track objects for quick lookup
+  const trackMap = new Map();
+  tracks.forEach(track => {
+    trackMap.set(track.id, track);
   });
   
-  const associatedCount = enhancedQuestions.filter(q => q.trackId).length;
-  console.log(`Associated ${associatedCount} of ${questions.length} questions with tracks`);
+  const enhancedQuestions = questions.map(question => {
+    // Verify trackId already exists from OpenAI service
+    if (!question.trackId) {
+      console.error(`Question missing trackId: ${question.question}`);
+      throw new Error(`Question missing trackId: "${question.question.substring(0, 50)}..."`);
+    }
+    
+    // Get track by ID
+    const track = trackMap.get(question.trackId);
+    if (!track) {
+      console.error(`Invalid trackId ${question.trackId} for question: ${question.question}`);
+      throw new Error(`Invalid trackId ${question.trackId} for question: "${question.question.substring(0, 50)}..."`);
+    }
+    
+    // Enhance question with additional track metadata that might be useful
+    const enhancedQuestion = {
+      ...question,
+      trackName: track.name,
+      artists: track.artists,
+      albumName: track.album?.name,
+      releaseYear: track.album?.releaseDate?.split('-')[0],
+      previewUrl: track.previewUrl
+    };
+    
+    console.log(`Enhanced question for track "${track.name}": ${question.question.substring(0, 30)}...`);
+    return enhancedQuestion;
+  });
   
+  console.log(`Enhanced ${enhancedQuestions.length} questions with track metadata`);
   return enhancedQuestions;
-};
-
-/**
- * Find the track most related to a question
- * @param {Object} question - Question object
- * @param {Array} tracks - Array of track objects
- * @returns {Object|null} - Matching track or null if no match
- */
-const findRelatedTrack = (question, tracks) => {
-  const questionText = question.question.toLowerCase();
-  
-  // First, look for direct mention of track name
-  for (const track of tracks) {
-    if (questionText.includes(track.name.toLowerCase())) {
-      return track;
-    }
-  }
-  
-  // Next, look for artist mentions
-  for (const track of tracks) {
-    for (const artist of track.artists) {
-      if (questionText.includes(artist.name.toLowerCase())) {
-        return track;
-      }
-    }
-  }
-  
-  // Finally, look for album mentions
-  for (const track of tracks) {
-    if (track.album && questionText.includes(track.album.name.toLowerCase())) {
-      return track;
-    }
-  }
-  
-  // If no match found, return null
-  return null;
 };
 
 module.exports = {

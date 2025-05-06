@@ -11,27 +11,13 @@ const RelatedCluesContent = ({
     crosswordData, 
     revealedAnswers, 
     handleRevealAnswer, 
-    handleHint 
+    handleHint,
+    getGroupEntries // Add this prop
   }) => {
-    // Find crossword entries that match the selected song group
-    const getGroupEntries = () => {
-      if (!selectedGroup || !crosswordData?.entries) return [];
-      
-      // Log some debugging info
-      console.log("Finding entries for group:", selectedGroup.id);
-      console.log("First few entries trackIds:", crosswordData.entries.slice(0, 3).map(e => e.trackId));
-      
-      // Use direct trackId matching now that we've preserved IDs throughout the process
-      const matchingEntries = crosswordData.entries.filter(entry => entry.trackId === selectedGroup.id);
-      
-      console.log(`Found ${matchingEntries.length} entries for group ${selectedGroup.name}`);
-      
-      return matchingEntries;
-    };
-  
+    // Remove the duplicate getGroupEntries function from here
+
     // Add this function inside the RelatedCluesContent component
     const getEntryId = (entry) => entry.id || `${entry.position.row}-${entry.position.col}-${entry.direction}`;
-  
     const entries = getGroupEntries();
     
     if (entries.length === 0) {
@@ -150,6 +136,7 @@ const HostModeInterface = ({
   const [volume, setVolume] = useState(1.0);
   const [availableVoices, setAvailableVoices] = useState([]);
   const [ttsAvailable, setTTSAvailable] = useState(false);
+  const [trackGroups, setTrackGroups] = useState([]);
   
   // Refs
   const timerRef = useRef(null);
@@ -276,41 +263,98 @@ useEffect(() => {
       });
     }
   }, [crosswordData]);
-  
-  // Timer effect
+
   useEffect(() => {
-    if (timerRunning) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            // Time's up
-            setTimerRunning(false);
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-            
-            // Timer expired sound/effect
-            playTimerEndSound();
-            
-            if (quizMasterActive) {
-              speak("Time's up! Let's see who knows the answer!");
-            }
-            
-            return 0;
-          }
-          return prev - 1;
+    if (crosswordData) {
+      console.log('Host Mode received crossword data:', crosswordData);
+      console.log('Song groups available:', crosswordData.songGroups?.length || 0);
+      
+      // Check track-to-entry associations
+      const entriesWithTrackId = crosswordData.entries.filter(e => e.trackId);
+      console.log(`Entries with trackId: ${entriesWithTrackId.length} of ${crosswordData.entries.length}`);
+      
+      if (crosswordData.songGroups && crosswordData.songGroups.length > 0) {
+        // Log associations for each song group
+        crosswordData.songGroups.forEach(group => {
+          const entriesForGroup = crosswordData.entries.filter(entry => entry.trackId === group.id);
+          console.log(`Track "${group.name}" (ID: ${group.id}) has ${entriesForGroup.length} associated entries`);
         });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
       }
-    };
-  }, [timerRunning]);
+    }
+  }, [crosswordData]);
+
+useEffect(() => {
+    if (crosswordData && crosswordData.entries) {
+      console.log('Creating song groups from entry trackIds');
+      
+      const groupsByTrack = {};
+      
+      crosswordData.entries.forEach(entry => {
+        if (!entry.trackId) {
+          if (!groupsByTrack['general']) {
+            groupsByTrack['general'] = {
+              id: 'general',
+              name: 'General Knowledge',
+              artists: [],
+              entries: []
+            };
+          }
+          groupsByTrack['general'].entries.push(entry);
+          return;
+        }
+        
+        if (!groupsByTrack[entry.trackId]) {
+          groupsByTrack[entry.trackId] = {
+            id: entry.trackId,
+            name: entry.trackName || 'Unknown Track',
+            artists: entry.artists || [],
+            entries: [],
+            imageUrl: entry.albumImageUrl || null,
+            previewUrl: entry.previewUrl
+          };
+        }
+        
+        groupsByTrack[entry.trackId].entries.push(entry);
+      });
+      
+      const groups = Object.values(groupsByTrack);
+      groups.sort((a, b) => b.entries.length - a.entries.length);
+      
+      setTrackGroups(groups);
+      
+      if (!crosswordData.songGroups) {
+        crosswordData.songGroups = groups;
+      }
+      
+      if (groups.length > 0 && !selectedGroup) {
+        setSelectedGroup(groups[0]);
+      }
+    }
+  }, [crosswordData]);
+
+const getGroupEntries = () => {
+  if (!selectedGroup || !crosswordData?.entries) return [];
+
+  if (selectedGroup.entries && selectedGroup.entries.length > 0) {
+    return selectedGroup.entries;
+  }
+  
+  console.log("Finding entries for group:", selectedGroup.id);
+  const matchingEntries = crosswordData.entries.filter(entry => 
+    entry.trackId === selectedGroup.id
+  );
+  
+  console.log(`Found ${matchingEntries.length} entries for track "${selectedGroup.name}" (ID: ${selectedGroup.id})`);
+  return matchingEntries;
+};
+
+useEffect(() => {
+  return () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  };
+}, [timerRunning]);
   
   // Enhanced speak function with caching
   const speak = async (text) => {
@@ -515,14 +559,6 @@ useEffect(() => {
     speak(intro);
   };
   
-  // Find crossword entries that match the selected song group
-  const getGroupEntries = () => {
-    if (!selectedGroup || !crosswordData?.entries) return [];
-    
-    return crosswordData.entries.filter(entry => 
-      entry.trackId === selectedGroup.id
-    );
-  };
   
   // Get entry ID from position and direction
   const getEntryId = (entry) => entry.id || `${entry.position.row}-${entry.position.col}-${entry.direction}`;
@@ -784,11 +820,9 @@ useEffect(() => {
               </p>
               
               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                {crosswordData?.songGroups?.map((group) => {
-                  // Updated logic to count clues
-                  const actualClueCount = crosswordData.entries.filter(entry => 
-                    entry.trackId === group.id || (!entry.trackId && group.name === 'General Knowledge')
-                  ).length;
+                {(trackGroups.length > 0 ? trackGroups : (crosswordData?.songGroups || [])).map((group) => {
+                  const actualClueCount = group.entries?.length || 
+                    crosswordData.entries.filter(entry => entry.trackId === group.id).length;
                   
                   return (
                     <button
@@ -1020,6 +1054,7 @@ useEffect(() => {
                   revealedAnswers={revealedAnswers}
                   handleRevealAnswer={handleRevealAnswer}
                   handleHint={handleHint}
+                  getGroupEntries={getGroupEntries} // Pass the function as a prop
                 />
               </div>
 

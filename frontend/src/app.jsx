@@ -12,7 +12,8 @@ import {
 } from './services/mockData';
 import HostMode from './components/HostModeInterface';
 import HostModeButton from './components/HostModeButton';
-import { Music, Play, Pause, Edit, RefreshCw, Check } from 'lucide-react';
+import { Music, Play, Pause, Edit, RefreshCw, Check, Mic } from 'lucide-react';
+import AIHostMode from './components/AIHostMode';
 
 
 // Create a client for React Query
@@ -60,6 +61,7 @@ function MusicCrossword() {
   const [playMode, setPlayMode] = useState(false); // Add this line
   const [isHostMode, setIsHostMode] = useState(false);
   const [enhancedCrosswordData, setEnhancedCrosswordData] = useState(null);
+  const [aiHostMode, setAIHostMode] = useState(false); // Add this state
 
   // Debug state
   const [showDebugPanel, setShowDebugPanel] = useState(false);
@@ -91,6 +93,10 @@ function MusicCrossword() {
     onSuccess: (response) => {
       setPlaylistData(response.data.data);
       setStep(2);
+    },
+    onError: (error) => {
+      console.error('Error fetching playlist data:', error.response?.data || error.message); // Log error
+      alert(error.response?.data?.error || 'Failed to fetch playlist data. Please check the URL and try again.');
     }
   });
   
@@ -107,8 +113,8 @@ function MusicCrossword() {
   const crosswordMutation = useMutation({
     mutationFn: (questions) => crosswordApi.buildCrossword(questions),
     onSuccess: (response) => {
-      console.log('Crossword data received:', response.data.data);
-      setCrosswordData(response.data.data);
+      console.log('Crossword data received:', response.data.data); // Debug log
+      setCrosswordData(response.data.data); // Ensure state is updated
       setStep(4);
     },
     onError: (error) => {
@@ -140,6 +146,77 @@ function MusicCrossword() {
       alert(errorMessage);
     }
   });
+
+  const aiHostCrosswordMutation = useMutation({
+    mutationFn: (url) => luckyApi.createLuckyCrossword(url),
+    onSuccess: (response) => {
+      console.log('AI Host crossword response:', response.data.data);
+      
+      // Check if song groups exist, if not, create them
+      let enhancedData = response.data.data;
+      
+      if (!enhancedData.songGroups || enhancedData.songGroups.length === 0) {
+        console.log('No song groups found in response, creating them now...');
+        
+        // Create a map to group questions by track ID
+        const trackMap = new Map();
+        
+        // Group entries by trackId
+        enhancedData.entries.forEach(entry => {
+          if (!entry.trackId) {
+            console.log('Entry without trackId:', entry);
+            // For entries without trackId, create a general group
+            if (!trackMap.has('general')) {
+              trackMap.set('general', {
+                id: 'general',
+                name: 'General Music Knowledge',
+                artists: [],
+                questions: [],
+                entries: []
+              });
+            }
+            trackMap.get('general').entries.push(entry);
+            return;
+          }
+          
+          if (!trackMap.has(entry.trackId)) {
+            trackMap.set(entry.trackId, {
+              id: entry.trackId,
+              name: entry.trackName || 'Unknown Track',
+              artists: entry.artists || [],
+              questions: [],
+              entries: [],
+              imageUrl: entry.albumImageUrl || null
+            });
+          }
+          
+          trackMap.get(entry.trackId).entries.push(entry);
+        });
+        
+        // Convert map to array
+        const songGroups = Array.from(trackMap.values());
+        console.log(`Created ${songGroups.length} song groups from entries`);
+        
+        // Add song groups to the crossword data
+        enhancedData = {
+          ...enhancedData,
+          songGroups: songGroups
+        };
+      }
+      
+      console.log('Enhanced data with song groups:', enhancedData);
+      setCrosswordData(enhancedData);
+      setStep(4);
+      setAIHostMode(true);
+    },
+    onError: (error) => {
+      console.error('Error creating AI-hosted crossword:', error);
+      const errorMessage = error.response?.data?.error || 
+                           error.message || 
+                           'Failed to create AI-hosted quiz';
+      alert(errorMessage);
+    }
+  });
   
   const handlePlaylistSubmit = (e) => {
     e.preventDefault();
@@ -152,25 +229,84 @@ function MusicCrossword() {
     questionsMutation.mutate(playlistData.tracks);
   };
 
-  // NEW MUTATION for enhanced crossword
-const enhanceCrosswordMutation = useMutation({
-  mutationFn: (data) => luckyApi.createQuizFromCrossword(data),
-  onSuccess: (response) => {
-    console.log('Enhanced crossword response:', response.data.data);
-    setEnhancedCrosswordData(response.data.data);
-    setIsHostMode(true);
-  },
-  onError: (error) => {
-    console.error('Error enhancing crossword:', error);
-    alert('Could not prepare the quiz. Please try again.');
-  }
-});
+  const enhanceCrosswordMutation = useMutation({
+    mutationFn: (data) => luckyApi.createQuizFromCrossword(data),
+    onSuccess: (response) => {
+      console.log('Enhanced crossword response:', response.data.data);
+      
+      // Check if song groups exist, if not, create them
+      let enhancedData = response.data.data;
+      
+      if (!enhancedData.songGroups || enhancedData.songGroups.length === 0) {
+        console.log('No song groups found in response, creating them now...');
+        
+        // Create a map to group entries by track ID
+        const trackMap = new Map();
+        
+        // Group entries by trackId
+        enhancedData.entries.forEach(entry => {
+          if (!entry.trackId) {
+            console.log('Entry without trackId:', entry);
+            // For entries without trackId, create a general group
+            if (!trackMap.has('general')) {
+              trackMap.set('general', {
+                id: 'general',
+                name: 'General Music Knowledge',
+                artists: [],
+                questions: [],
+                entries: []
+              });
+            }
+            trackMap.get('general').entries.push(entry);
+            return;
+          }
+          
+          if (!trackMap.has(entry.trackId)) {
+            trackMap.set(entry.trackId, {
+              id: entry.trackId,
+              name: entry.trackName || 'Unknown Track',
+              artists: entry.artists || [],
+              questions: [],
+              entries: [],
+              imageUrl: entry.albumImageUrl || null
+            });
+          }
+          
+          trackMap.get(entry.trackId).entries.push(entry);
+        });
+        
+        // Convert map to array
+        const songGroups = Array.from(trackMap.values());
+        console.log(`Created ${songGroups.length} song groups from entries`);
+        
+        // Add song groups to the crossword data
+        enhancedData = {
+          ...enhancedData,
+          songGroups: songGroups
+        };
+      }
+      
+      console.log('Enhanced data with song groups:', enhancedData);
+      setEnhancedCrosswordData(enhancedData);
+      setIsHostMode(true);
+    },
+    onError: (error) => {
+      console.error('Error enhancing crossword:', error);
+      alert('Could not prepare the quiz. Please try again.');
+    }
+  });
 
   // Add this function with your other handlers
 const handleLuckyCrossword = () => {
   if (!playlistUrl) return;
   luckyCrosswordMutation.mutate(playlistUrl);
 };
+
+const handleAIHostCrossword = () => {
+  if (!playlistUrl) return;
+  aiHostCrosswordMutation.mutate(playlistUrl);
+};
+
   const toggleQuestionSelection = (question) => {
     setSelectedQuestions(prev => {
       const isSelected = prev.some(q => q.answer === question.answer);
@@ -398,7 +534,7 @@ const handleLuckyCrossword = () => {
         )}
       </button>
       
-      {/* New Lucky button */}
+      {/* OR divider */}
       <div className="relative mb-4">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-300" />
@@ -408,27 +544,66 @@ const handleLuckyCrossword = () => {
         </div>
       </div>
       
+      {/* Lucky Crossword option */}
       <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-  <p className="text-blue-800 text-sm">
-    Want a ready-to-solve crossword based on your playlist? We'll automatically create a crossword puzzle that you can solve right away!
-  </p>
-</div>
+        <p className="text-blue-800 text-sm">
+          Want a ready-to-solve crossword based on your playlist? We'll automatically create a crossword puzzle that you can solve right away!
+        </p>
+      </div>
 
-<button
-  onClick={handleLuckyCrossword}
-  className="btn btn-secondary w-full"
-  disabled={luckyCrosswordMutation.isPending}
->
-  {luckyCrosswordMutation.isPending ? (
-    <>
-      <RefreshCw className="animate-spin mr-2" size={18} />
-      Building Your Crossword...
-    </>
-  ) : (
-    "Build & Play Crossword"
-  )}
-</button>
+      <button
+        onClick={handleLuckyCrossword}
+        className="btn btn-secondary w-full mb-4"
+        disabled={luckyCrosswordMutation.isPending}
+      >
+        {luckyCrosswordMutation.isPending ? (
+          <>
+            <RefreshCw className="animate-spin mr-2" size={18} />
+            Building Your Crossword...
+          </>
+        ) : (
+          "Build & Play Crossword"
+        )}
+      </button>
       
+      {/* NEW: AI Host option */}
+      <div className="relative mb-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-300" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-2 bg-white text-gray-500">OR</span>
+        </div>
+      </div>
+      
+      <div className="mb-4 p-3 bg-purple-50 rounded-lg">
+        <div className="flex items-start">
+          <Mic className="h-5 w-5 text-purple-500 mr-2 mt-0.5" />
+          <p className="text-purple-800 text-sm">
+            Let an AI host guide you through the crossword as a quiz! Perfect for parties and events.
+          </p>
+        </div>
+      </div>
+      
+      <button
+        onClick={handleAIHostCrossword}
+        className="btn bg-purple-600 hover:bg-purple-700 text-white w-full"
+        disabled={aiHostCrosswordMutation.isPending}
+      >
+        {aiHostCrosswordMutation.isPending ? (
+          <>
+            <RefreshCw className="animate-spin mr-2" size={18} />
+            Creating AI-Hosted Quiz...
+          </>
+        ) : (
+          <>
+            <Mic className="mr-2" size={18} />
+            Create AI-Hosted Quiz
+          </>
+        )}
+      </button>
+      
+      {/* Error messages */}
       {questionsMutation.isError && (
         <p className="text-red-500 mt-2">
           {questionsMutation.error.response?.data?.error || 'Failed to generate questions'}
@@ -441,219 +616,256 @@ const handleLuckyCrossword = () => {
         </p>
       )}
       
+      {aiHostCrosswordMutation?.isError && (
+        <p className="text-red-500 mt-2">
+          {aiHostCrosswordMutation.error.response?.data?.error || 'Failed to create AI-hosted quiz'}
+        </p>
+      )}
+      
       <button 
         onClick={() => setStep(1)} 
         className="mt-4 text-primary-600 hover:underline"
-        disabled={questionsMutation.isPending || luckyCrosswordMutation.isPending}
+        disabled={questionsMutation.isPending || luckyCrosswordMutation.isPending || aiHostCrosswordMutation?.isPending}
       >
         ← Back to playlist selection
       </button>
-            
-            {isDevelopment && (
-              <div className="mt-4 border-t pt-4">
-                <button
-                  onClick={handleLoadMockQuestions}
-                  className="text-sm text-primary-600 hover:text-primary-700 underline"
-                >
-                  Skip and load test questions
-                </button>
-              </div>
-            )}
-          </div>
+      
+      {isDevelopment && (
+        <div className="mt-4 border-t pt-4">
+          <button
+            onClick={handleLoadMockQuestions}
+            className="text-sm text-primary-600 hover:text-primary-700 underline"
+          >
+            Skip and load test questions
+          </button>
         </div>
       )}
+    </div>
+  </div>
+)}
 
       
       
-      {/* Step 3: Select questions for crossword */}
-      {step === 3 && generatedQuestions.length > 0 && (
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Select Questions for Your Crossword</h2>
-          
-          <p className="text-gray-600 mb-4">
-            Select at least 5 questions to include in your crossword puzzle.
-          </p>
-          
-          {/* Info box about answer requirements */}
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
-            <h3 className="font-medium text-blue-800">Answer Requirements</h3>
-            <p className="text-sm text-blue-700">
-              For best results, select answers that:
-            </p>
-            <ul className="list-disc pl-5 text-sm text-blue-700 mt-1">
-              <li>Contain only letters (A-Z)</li>
-              <li>Are at least 3 characters long</li>
-              <li>Have no spaces or special characters</li>
-            </ul>
-          </div>
-          
-          <div className="border rounded-md divide-y max-h-96 overflow-y-auto">
-            {generatedQuestions.map((question, index) => {
-              const isValid = validateQuestion(question);
-              
-              return (
-                <div 
-                  key={index}
-                  className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer ${
-                    !isValid ? 'opacity-50 bg-gray-50' : 
-                    selectedQuestions.some(q => q.answer === question.answer) ? 'bg-primary-50' : ''
-                  }`}
-                  onClick={() => isValid && toggleQuestionSelection(question)}
-                >
-                  <div>
-                    <p className="font-medium">{question.question}</p>
-                    <p className="text-sm text-gray-500">
-                      Answer: {question.answer}
-                      {!isValid && (
-                        <span className="text-red-500 ml-2">
-                          (Not usable in crossword)
-                        </span>
-                      )}
+{/* Step 3: Select questions for crossword */}
+{step === 3 && generatedQuestions.length > 0 && (
+  <div>
+    <h2 className="text-xl font-semibold mb-4">Select Questions for Your Crossword</h2>
+    
+    <p className="text-gray-600 mb-4">
+      Select at least 5 questions to include in your crossword puzzle.
+    </p>
+    
+    {/* Info box about answer requirements */}
+    <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
+      <h3 className="font-medium text-blue-800">Answer Requirements</h3>
+      <p className="text-sm text-blue-700">
+        For best results, select answers that:
+      </p>
+      <ul className="list-disc pl-5 text-sm text-blue-700 mt-1">
+        <li>Contain only letters (A-Z)</li>
+        <li>Are at least 3 characters long</li>
+        <li>Have no spaces or special characters</li>
+      </ul>
+    </div>
+    
+    {/* Group questions by track */}
+    <div className="space-y-6">
+      {/* Create a map of trackId -> questions */}
+      {(() => {
+        // Group questions by trackId
+        const trackGroups = {};
+        generatedQuestions.forEach(question => {
+          const trackId = question.trackId || 'unknown';
+          if (!trackGroups[trackId]) {
+            trackGroups[trackId] = {
+              questions: [],
+              trackName: question.trackName || 'Unknown Track',
+              artists: question.artists || []
+            };
+          }
+          trackGroups[trackId].questions.push(question);
+        });
+        
+        // Sort tracks by number of questions (descending)
+        const sortedTracks = Object.keys(trackGroups).sort((a, b) => 
+          trackGroups[b].questions.length - trackGroups[a].questions.length
+        );
+        
+        return sortedTracks.map(trackId => (
+          <div key={trackId} className="border rounded-lg overflow-hidden">
+            {/* Track header */}
+            <div className="bg-blue-50 p-3 border-b">
+              <div className="flex items-center">
+                <Music className="text-blue-600 mr-2" size={18} />
+                <div>
+                  <h3 className="font-medium text-blue-800">
+                    {trackGroups[trackId].trackName}
+                  </h3>
+                  {trackGroups[trackId].artists && trackGroups[trackId].artists.length > 0 && (
+                    <p className="text-xs text-blue-600">
+                      by {trackGroups[trackId].artists.map(a => a.name).join(', ')}
                     </p>
-                  </div>
-                  <div className={`w-6 h-6 flex items-center justify-center rounded-full border ${
-                    selectedQuestions.some(q => q.answer === question.answer) 
-                      ? 'bg-primary-600 border-primary-600 text-white' 
-                      : 'border-gray-300'
-                  }`}>
-                    {selectedQuestions.some(q => q.answer === question.answer) && (
-                      <Check size={16} />
-                    )}
-                  </div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-          
-          <div className="mt-4 flex justify-between items-center">
-            <p className="text-sm text-gray-600">
-              {selectedQuestions.length} of {generatedQuestions.length} selected
-              {selectedQuestions.length < 5 && (
-                <span className="text-red-500 ml-2">(minimum 5 required)</span>
-              )}
-            </p>
+                <div className="ml-auto text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                  {trackGroups[trackId].questions.length} questions
+                </div>
+              </div>
+            </div>
             
-            <div className="space-x-2">
-              <button 
-                onClick={() => setStep(2)} 
-                className="btn btn-outline"
-              >
-                Back
-              </button>
-              
-              <button
-                onClick={handleBuildCrossword}
-                className="btn btn-primary"
-                disabled={selectedQuestions.length < 5 || crosswordMutation.isPending}
-              >
-                {crosswordMutation.isPending ? (
-                  <>
-                    <RefreshCw className="animate-spin mr-2" size={18} />
-                    Building...
-                  </>
-                ) : (
-                  'Build Crossword'
-                )}
-              </button>
+            {/* Questions list */}
+            <div className="divide-y">
+              {trackGroups[trackId].questions.map((question, index) => {
+                const isValid = validateQuestion(question);
+                
+                return (
+                  <div 
+                    key={index}
+                    className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer ${
+                      !isValid ? 'opacity-50 bg-gray-50' : 
+                      selectedQuestions.some(q => q.answer === question.answer) ? 'bg-primary-50' : ''
+                    }`}
+                    onClick={() => isValid && toggleQuestionSelection(question)}
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{question.question}</p>
+                      <p className="text-sm text-gray-500">
+                        Answer: {question.answer}
+                        {!isValid && (
+                          <span className="text-red-500 ml-2">
+                            (Not usable in crossword)
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    
+                    <div className={`w-6 h-6 flex items-center justify-center rounded-full border ${
+                      selectedQuestions.some(q => q.answer === question.answer) 
+                        ? 'bg-primary-600 border-primary-600 text-white' 
+                        : 'border-gray-300'
+                    }`}>
+                      {selectedQuestions.some(q => q.answer === question.answer) && (
+                        <Check size={16} />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-          
-          {isDevelopment && selectedQuestions.length < 5 && (
-            <div className="mt-4 border-t pt-4">
-              <button
-                onClick={() => {
-                  // Select the first 5 valid questions
-                  const validQuestions = generatedQuestions
-                    .filter(validateQuestion)
-                    .slice(0, 5);
-                  setSelectedQuestions(validQuestions);
-                }}
-                className="text-sm text-primary-600 hover:text-primary-700 underline"
-              >
-                Auto-select 5 valid questions
-              </button>
-            </div>
+        ));
+      })()}
+    </div>
+    
+    <div className="mt-4 flex justify-between items-center">
+      <p className="text-sm text-gray-600">
+        {selectedQuestions.length} of {generatedQuestions.length} selected
+        {selectedQuestions.length < 5 && (
+          <span className="text-red-500 ml-2">(minimum 5 required)</span>
+        )}
+      </p>
+      
+      <div className="space-x-2">
+        <button 
+          onClick={() => setStep(2)} 
+          className="btn btn-outline"
+        >
+          Back
+        </button>
+        
+        <button
+          onClick={handleBuildCrossword}
+          className="btn btn-primary"
+          disabled={selectedQuestions.length < 5 || crosswordMutation.isPending}
+        >
+          {crosswordMutation.isPending ? (
+            <>
+              <RefreshCw className="animate-spin mr-2" size={18} />
+              Building...
+            </>
+          ) : (
+            'Build Crossword'
           )}
-          
-          {isDevelopment && (
-            <div className="mt-4 border-t pt-4">
-              <button
-                onClick={handleLoadMockCrossword}
-                className="text-sm text-primary-600 hover:text-primary-700 underline"
-              >
-                Skip and load test crossword
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       
 {/* Step 4: Crossword Editor/Player */}
 {step === 4 && (
-  crosswordMutation.isPending ? (
+  crosswordMutation.isPending || aiHostCrosswordMutation.isPending ? (
     <CrosswordEditorLoading onBack={handleBackToQuestions} />
   ) : crosswordData ? (
     <>
-      {/* Check if we're in host mode first */}
-      {isHostMode && enhancedCrosswordData ? (
-        <HostMode 
-          crosswordData={enhancedCrosswordData}
-          onExit={() => setIsHostMode(false)}
-          onTogglePlayMode={() => setIsHostMode(false)}
+      <div className="flex justify-end mb-4">
+        <div className="inline-flex rounded-md shadow-sm" role="group">
+          <button
+            type="button"
+            className={`px-4 py-2 text-sm font-medium ${!playMode && !aiHostMode 
+              ? 'bg-primary-600 text-white' 
+              : 'bg-white text-gray-700 hover:bg-gray-50'} 
+              rounded-l-lg border border-gray-200 flex items-center`}
+            onClick={() => {
+              setPlayMode(false);
+              setAIHostMode(false);
+            }}
+          >
+            <Edit className="mr-2" size={16} />
+            Edit
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-2 text-sm font-medium ${playMode && !aiHostMode
+              ? 'bg-primary-600 text-white' 
+              : 'bg-white text-gray-700 hover:bg-gray-50'} 
+              border border-gray-200 flex items-center`}
+            onClick={() => {
+              setPlayMode(true);
+              setAIHostMode(false);
+            }}
+          >
+            <Play className="mr-2" size={16} />
+            Play
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-2 text-sm font-medium ${aiHostMode
+              ? 'bg-primary-600 text-white' 
+              : 'bg-white text-gray-700 hover:bg-gray-50'} 
+              rounded-r-lg border border-gray-200 flex items-center`}
+            onClick={() => {
+              setPlayMode(false);
+              setAIHostMode(true);
+            }}
+          >
+            <Mic className="mr-2" size={16} />
+            AI Host
+          </button>
+        </div>
+      </div>
+      
+      {aiHostMode ? (
+        <AIHostMode 
+          crosswordData={enhancedCrosswordData || crosswordData} // Use enhanced data if available if available
+          onExit={() => setAIHostMode(false)}
+          onSwitchToManual={() => {
+            setPlayMode(true);
+            setAIHostMode(false);
+          }}
         />
+      ) : playMode ? (
+        <ErrorBoundary onReset={() => setPlayMode(false)}>
+          <PlayQuiz 
+            crosswordData={crosswordData} 
+            onReset={() => setPlayMode(false)} 
+          />
+        </ErrorBoundary>
       ) : (
-        <>
-          {/* Mode toggle buttons */}
-          <div className="flex justify-end mb-4 space-x-2">
-            {/* Existing mode toggle */}
-            <div className="inline-flex rounded-md shadow-sm" role="group">
-              <button
-                type="button"
-                className={`px-4 py-2 text-sm font-medium ${!playMode 
-                  ? 'bg-primary-600 text-white' 
-                  : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                  rounded-l-lg border border-gray-200 flex items-center`}
-                onClick={() => setPlayMode(false)}
-              >
-                <Edit className="mr-2" size={16} />
-                Edit
-              </button>
-              <button
-                type="button"
-                className={`px-4 py-2 text-sm font-medium ${playMode 
-                  ? 'bg-primary-600 text-white' 
-                  : 'bg-white text-gray-700 hover:bg-gray-50'} 
-                  rounded-r-lg border border-gray-200 flex items-center`}
-                onClick={() => setPlayMode(true)}
-              >
-                <Play className="mr-2" size={16} />
-                Play
-              </button>
-            </div>
-            
-            {/* NEW: Host Mode button */}
-            <HostModeButton 
-              isHostMode={isHostMode}
-              onClick={toggleHostMode}
-              disabled={enhanceCrosswordMutation.isPending}
-            />
-          </div>
-          
-          {/* Original component rendering based on playMode */}
-          {playMode ? (
-            <ErrorBoundary onReset={() => setPlayMode(false)}>
-              <PlayQuiz 
-                crosswordData={crosswordData} 
-                onReset={() => setPlayMode(false)} 
-              />
-            </ErrorBoundary>
-          ) : (
-            <CrosswordEditor 
-              crosswordData={crosswordData} 
-              onBack={handleBackToQuestions}
-            />
-          )}
-        </>
+        <CrosswordEditor 
+          crosswordData={crosswordData} 
+          onBack={handleBackToQuestions}
+        />
       )}
     </>
   ) : (

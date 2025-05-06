@@ -63,7 +63,6 @@ const createSongGroups = (generatedQuestions, tracks) => {
   const songGroups = [];
   const trackMap = new Map();
 
-  // Initialize groups for each track
   tracks.forEach(track => {
     trackMap.set(track.id, {
       id: track.id,
@@ -77,45 +76,14 @@ const createSongGroups = (generatedQuestions, tracks) => {
     });
   });
 
-  // Distribute questions to tracks based on the question content
-  for (const question of generatedQuestions) {
-    let bestTrack = null;
-    let bestScore = 0;
-
-    // Match question to track using text matching
-    for (const track of tracks) {
-      let score = 0;
-      if (question.question.toLowerCase().includes(track.name.toLowerCase())) score += 3;
-      for (const artist of track.artists) {
-        if (question.question.toLowerCase().includes(artist.name.toLowerCase())) {
-          score += 2;
-          break;
-        }
-      }
-      if (track.album && question.question.toLowerCase().includes(track.album.name.toLowerCase())) score += 1;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestTrack = track;
-      }
-    }
-
-    // Assign to the best track or general knowledge
-    if (bestTrack) {
-      trackMap.get(bestTrack.id).questions.push(question);
+  generatedQuestions.forEach(question => {
+    if (question.trackId && trackMap.has(question.trackId)) {
+      trackMap.get(question.trackId).questions.push(question);
     } else {
-      if (!trackMap.has('general')) {
-        trackMap.set('general', {
-          id: 'general',
-          name: 'General Music Knowledge',
-          questions: []
-        });
-      }
-      trackMap.get('general').questions.push(question);
+      console.warn(`Question "${question.question}" has no valid trackId`);
     }
-  }
+  });
 
-  // Convert map to array
   trackMap.forEach(group => {
     if (group.questions.length > 0) {
       songGroups.push(group);
@@ -158,56 +126,55 @@ const createLuckyCrossword = async (req, res) => {
     console.log('Selecting best questions...');
     const selectedQuestions = selectBestQuestions(questions);
     
-    // Step 6: Ensure crossword entries are associated with song groups
-// Create a map of clue -> entry for quick lookup
-const clueEntryMap = new Map();
-crosswordData.entries.forEach(entry => {
-  clueEntryMap.set(entry.clue, entry);
-});
-
-// For each song group, filter its questions to only include those that made it into the crossword
-songGroups.forEach(group => {
-  // Find which questions from this group made it into the crossword
-  group.crosswordQuestions = group.questions.filter(question => 
-    clueEntryMap.has(question.question)
-  );
-  
-  // Add crossword info to these questions
-  group.crosswordQuestions.forEach(question => {
-    const entry = clueEntryMap.get(question.question);
-    question.crosswordEntry = entry;
-  });
-});
-
-// Create enhanced crossword
-const enhancedCrossword = {
-  ...crosswordData,
-  songGroups: songGroups,
-  playlist: {
-    id: playlistData.id,
-    name: playlistData.name,
-    description: playlistData.description,
-    owner: playlistData.owner,
-    images: playlistData.images,
-    tracksCount: playlistData.tracksCount
-  }
-};
+    // Step 4: Generate crossword data
+    console.log('Generating crossword data...');
+    const crosswordData = await crosswordService.generateCrossword(selectedQuestions);
     
+    // Step 5: Create song groups
+    console.log('Creating song groups...');
+    const songGroups = createSongGroups(selectedQuestions, playlistData.tracks);
+    console.log('Generated song groups:', songGroups.length, songGroups);
+
+    // Ensure crossword entries are associated with song groups
+    const clueEntryMap = new Map();
+    crosswordData.entries.forEach(entry => {
+      clueEntryMap.set(entry.clue, entry);
+    });
+
+    songGroups.forEach(group => {
+      group.crosswordQuestions = group.questions.filter(question => 
+        clueEntryMap.has(question.question)
+      );
+      group.crosswordQuestions.forEach(question => {
+        const entry = clueEntryMap.get(question.question);
+        question.crosswordEntry = entry; // Associate crossword entry with the question
+      });
+    });
+
+    // Create enhanced crossword
+    const enhancedCrossword = {
+      ...crosswordData,
+      songGroups: songGroups,
+      playlist: {
+        id: playlistData.id,
+        name: playlistData.name,
+        description: playlistData.description,
+        owner: playlistData.owner,
+        images: playlistData.images,
+        tracksCount: playlistData.tracksCount
+      }
+    };
     console.log('Enhanced crossword song groups:', enhancedCrossword.songGroups.length);
-    console.log('Lucky crossword created successfully with song grouping');
-    
-    // Return enhanced crossword data with song groups
+    console.log('Crossword entries:', enhancedCrossword.entries.length);
     return res.status(200).json({
       success: true,
       data: enhancedCrossword
     });
   } catch (error) {
     console.error('Error creating lucky crossword:', error);
-    
     if (error.message.includes('Not enough valid questions')) {
       return res.status(400).json({ error: error.message });
     }
-    
     return res.status(500).json({ 
       error: 'Failed to create lucky crossword',
       message: error.message
@@ -223,22 +190,116 @@ const enhancedCrossword = {
 const createQuizFromCrossword = async (req, res) => {
   try {
     const { crosswordData, questions, playlistData } = req.body;
-    
+
     console.log('Creating quiz from existing crossword');
-    
+
     if (!crosswordData || !questions || !playlistData) {
       return res.status(400).json({ 
         error: 'Missing required parameters: crosswordData, questions, playlistData' 
       });
     }
+
+    // Match questions to tracks to assign trackId to each question
+    const enhancedQuestions = questions.map(question => {
+      // Find the best matching track for this question
+      let bestTrack = null;
+      let bestScore = 0;
+      const questionText = question.question.toLowerCase();
+
+      for (const track of playlistData.tracks) {
+        let score = 0;
+        // Check if track name is in the question
+        if (track.name && questionText.includes(track.name.toLowerCase())) {
+          score += 3;
+        }
+        
+        // Check if any artist is mentioned
+        if (track.artists) {
+          for (const artist of track.artists) {
+            if (artist.name && questionText.includes(artist.name.toLowerCase())) {
+              score += 2;
+            }
+          }
+        }
+        
+        // Check if album is mentioned
+        if (track.album && track.album.name && 
+            questionText.includes(track.album.name.toLowerCase())) {
+          score += 1;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTrack = track;
+        }
+      }
+
+      // Add trackId to the question
+      if (bestTrack && bestScore > 0) {
+        console.log(`Matched question "${question.question.substring(0, 30)}..." to track "${bestTrack.name}"`);
+        return {
+          ...question,
+          trackId: bestTrack.id,
+          trackName: bestTrack.name,
+          artists: bestTrack.artists
+        };
+      }
+      
+      // No good match found
+      console.log(`No track match for question: "${question.question.substring(0, 30)}..."`);
+      return question;
+    });
     
-    // Use our direct song grouping method instead of songGroupingService
-    console.log('Creating song groups directly...');
-    const songGroups = createSongGroups(questions, playlistData.tracks);
+    // Now create song groups with the enhanced questions
+    const songGroups = createSongGroups(enhancedQuestions, playlistData.tracks);
+
+    // Add a general group for unmatched questions if needed
+    const unmatchedQuestions = enhancedQuestions.filter(q => !q.trackId);
+    if (unmatchedQuestions.length > 0) {
+      songGroups.push({
+        id: 'general',
+        name: 'General Music Knowledge',
+        questions: unmatchedQuestions,
+        artists: []
+      });
+    }
+
+    console.log(`Created ${songGroups.length} song groups`);
+    
+    // Create a map of question text to trackId for easier lookup
+    const questionTrackMap = new Map();
+    songGroups.forEach(group => {
+      group.questions.forEach(question => {
+        questionTrackMap.set(question.question, group.id);
+      });
+    });
+
+    // Enhance crossword entries with trackId
+    const enhancedEntries = crosswordData.entries.map(entry => {
+      // If entry already has trackId, keep it
+      if (entry.trackId) return entry;
+      
+      // Try to find matching trackId from the question text
+      const trackId = questionTrackMap.get(entry.clue);
+      
+      if (trackId) {
+        // Find the corresponding song group to get full track info
+        const songGroup = songGroups.find(group => group.id === trackId);
+        return {
+          ...entry,
+          trackId: trackId,
+          trackName: songGroup ? songGroup.name : null,
+          artists: songGroup ? songGroup.artists : null
+        };
+      }
+      
+      return entry;
+    });
     
     // Create enhanced crossword
     const enhancedCrossword = {
       ...crosswordData,
+      entries: enhancedEntries,
       songGroups: songGroups,
       playlist: {
         id: playlistData.id,
@@ -251,6 +312,8 @@ const createQuizFromCrossword = async (req, res) => {
     };
     
     console.log('Quiz created successfully from existing crossword');
+    console.log(`Enhanced entries with trackId: ${enhancedEntries.filter(e => e.trackId).length}/${enhancedEntries.length}`);
+    console.log(`Song groups created: ${songGroups.length}`);
     
     // Return enhanced crossword data with song groups
     return res.status(200).json({
@@ -265,7 +328,6 @@ const createQuizFromCrossword = async (req, res) => {
     });
   }
 };
-
 module.exports = {
   createLuckyCrossword,
   createQuizFromCrossword
